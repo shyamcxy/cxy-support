@@ -125,6 +125,18 @@ pub struct LongJob {
     pub error: Option<String>,
 }
 
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StoredFile {
+    pub id: String,
+    pub name: String,
+    pub content_type: String,
+    pub size: u64,
+    pub uri: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Runtime {
     pub records: BTreeMap<String, Vec<Record>>,
@@ -137,6 +149,8 @@ pub struct Runtime {
     pub execution_jobs: BTreeMap<u64, LongJob>,
     #[serde(default)]
     pub pending_execution_jobs: VecDeque<u64>,
+    #[serde(default)]
+    pub files: BTreeMap<String, StoredFile>,
 
     #[serde(skip)]
     pub subscriptions: Vec<Subscription>,
@@ -148,6 +162,7 @@ pub struct Runtime {
     next_subscription_id: u64,
     next_agent_task_id: u64,
     next_execution_job_id: u64,
+    next_file_id: u64,
 }
 
 impl Runtime {
@@ -262,6 +277,35 @@ impl Runtime {
 
     pub fn take_job(&mut self) -> Option<WorkflowJob> {
         self.jobs.pop_front()
+    }
+
+    pub fn register_file(
+        &mut self,
+        name: String,
+        content_type: String,
+        size: u64,
+        uri: String,
+        kind: Option<String>,
+    ) -> StoredFile {
+        self.next_file_id += 1;
+        let file = StoredFile {
+            id: format!("file_{}", self.next_file_id),
+            name,
+            content_type,
+            size,
+            uri,
+            kind,
+        };
+        self.files.insert(file.id.clone(), file.clone());
+        file
+    }
+
+    pub fn get_file(&self, id: &str) -> Option<StoredFile> {
+        self.files.get(id).cloned()
+    }
+
+    pub fn list_files(&self) -> Vec<StoredFile> {
+        self.files.values().cloned().collect()
     }
 
     pub fn start_job(
@@ -666,6 +710,20 @@ mod tests {
         }
 
         assert_eq!(runtime.take_agent_task().unwrap().agent, "supportAgent");
+    }
+
+    #[test]
+    fn file_registration_is_runtime_native() {
+        let mut runtime = Runtime::default();
+        let file = runtime.register_file(
+            "clip.mp4".into(),
+            "video/mp4".into(),
+            1024,
+            "s3://bucket/clip.mp4".into(),
+            Some("Video".into()),
+        );
+        assert_eq!(file.id, "file_1");
+        assert_eq!(runtime.get_file("file_1").unwrap().size, 1024);
     }
 
     #[test]

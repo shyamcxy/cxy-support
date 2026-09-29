@@ -44,7 +44,15 @@
       "next_task",
       "seed_tasks",
       "claim_task",
-      "complete_task"
+      "complete_task",
+      "start_job",
+      "next_execution_job",
+      "get_job",
+      "list_jobs",
+      "update_job",
+      "register_file",
+      "get_file",
+      "list_files"
     ]
   },
   "primitives": [
@@ -72,12 +80,12 @@
     ],
     "planned": [
       "durable_postgres",
-      "http",
       "websocket",
-      "worker_execution",
       "auth",
       "generated_ui",
-      "deployment"
+      "deployment",
+      "object_storage",
+      "policy_enforcement"
     ]
   },
   "runtime": {

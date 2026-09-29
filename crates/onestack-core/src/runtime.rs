@@ -26,7 +26,10 @@ pub enum RuntimeError {
     TaskNotReady(u64),
     #[error("invalid task state: {0}")]
     InvalidTaskState(String),
+    #[error("execution job not found: {0}")]
     MissingExecutionJob(u64),
+    #[error("policy denied for {action} on {resource}")]
+    PolicyDenied { action: String, resource: String },
 }
 
 impl RuntimeError {
@@ -43,6 +46,7 @@ impl RuntimeError {
             Self::TaskNotReady(_) => "TASK_NOT_READY",
             Self::InvalidTaskState(_) => "INVALID_TASK_STATE",
             Self::MissingExecutionJob(_) => "EXECUTION_JOB_NOT_FOUND",
+            Self::PolicyDenied { .. } => "POLICY_DENIED",
         }
     }
 }

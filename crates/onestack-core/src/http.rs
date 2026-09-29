@@ -164,6 +164,6 @@ mod tests {
     #[test]
     fn finds_http_header_end() {
         let data = b"POST /agent HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}";
-        assert_eq!(find_header_end(data), Some(38));
+        assert_eq!(find_header_end(data), Some(39));
     }
 }

@@ -64,23 +64,26 @@ where
         }
     }
 
-    let header_bytes = &buffer[..header_end];
-    let header_text = String::from_utf8_lossy(header_bytes);
-    let mut lines = header_text.lines();
-    let request_line = lines.next().unwrap_or_default();
+    let (method, path, content_length): (String, String, usize) = {
+        let header_bytes = &buffer[..header_end];
+        let header_text = String::from_utf8_lossy(header_bytes);
+        let mut lines = header_text.lines();
+        let request_line = lines.next().unwrap_or_default().to_owned();
 
-    let mut parts = request_line.split_whitespace();
-    let method = parts.next().unwrap_or_default();
-    let path = parts.next().unwrap_or_default();
+        let mut parts = request_line.split_whitespace();
+        let method = parts.next().unwrap_or_default().to_owned();
+        let path = parts.next().unwrap_or_default().to_owned();
 
-    let mut content_length = 0usize;
-    for line in lines {
-        if let Some((name, value)) = line.split_once(':') {
-            if name.eq_ignore_ascii_case("content-length") {
-                content_length = value.trim().parse().unwrap_or(0);
+        let mut content_length = 0usize;
+        for line in lines {
+            if let Some((name, value)) = line.split_once(':') {
+                if name.eq_ignore_ascii_case("content-length") {
+                    content_length = value.trim().parse().unwrap_or(0);
+                }
             }
         }
-    }
+        (method, path, content_length)
+    };
 
     let body_start = header_end + 4;
     while buffer.len() < body_start + content_length {
@@ -135,7 +138,7 @@ fn write_response<T: serde::Serialize>(
     status: u16,
     body: &T,
 ) -> io::Result<()> {
-    let bytes = serde_json::to_vec(body).unwrap_or_else(|_| b"{"ok":false}".to_vec());
+    let bytes = serde_json::to_vec(body).unwrap_or_else(|_| br#"{"ok":false}"#.to_vec());
     let status_text = match status {
         200 => "OK",
         400 => "Bad Request",

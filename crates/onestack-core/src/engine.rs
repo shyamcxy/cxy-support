@@ -37,7 +37,7 @@ pub fn parse_oir(source: &str) -> Result<App, EngineError> {
                     let Some((name, rest)) = candidate.split_once(':') else { break; };
                     lines.next();
                     let mut p = rest.split_whitespace();
-                    let ty = parse_type(required(p.next(), peek_idx + 1, "field needs a type")?);
+                    let ty = parse_type(&required(p.next(), peek_idx + 1, "field needs a type")?);
                     let required = p.any(|x| x == "required");
                     fields.insert(name.trim().to_owned(), Field { ty, required });
                 }
@@ -217,6 +217,12 @@ VIEW tickets
         let mut app = App::new("broken");
         app.upsert(Node::View { id: "tickets".into(), source: "Ticket".into(), realtime: true });
         let errors = validate(&app);
-        assert_eq!(errors, vec!["tickets references missing node Ticket".to_string()]);
+        assert_eq!(
+            errors,
+            vec![
+                "tickets references missing node Ticket".to_string(),
+                "view tickets source Ticket is not an Entity".to_string()
+            ]
+        );
     }
 }

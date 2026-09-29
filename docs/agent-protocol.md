@@ -177,6 +177,21 @@ Manage realtime View subscriptions.
 {"id":15,"op":"unsubscribe","subscription_id":1}
 ```
 
+### list_tasks / next_task / seed_tasks / claim_task / complete_task
+
+Machine task picker for GitHub Issues without calling external APIs.
+`seed_tasks` loads the compact mirror (`docs/task-queue.json`).
+`next_task` returns the lowest READY issue. `claim_task` moves READY → IN_PROGRESS.
+`complete_task` moves IN_PROGRESS → DONE or BLOCKED with handoff notes.
+
+```json
+{"id":16,"op":"seed_tasks","payload":[{"issue":2,"title":"Durable Postgres execution backend","state":"READY"}]}
+{"id":17,"op":"list_tasks"}
+{"id":18,"op":"next_task"}
+{"id":19,"op":"claim_task","issue":2,"agent":"agent-1"}
+{"id":20,"op":"complete_task","issue":2,"task_state":"DONE","handoff":"postgres trait landed"}
+```
+
 ### HTTP transport
 
 The same protocol is exposed at:

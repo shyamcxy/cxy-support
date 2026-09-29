@@ -20,6 +20,12 @@ pub enum RuntimeError {
     MissingWorkflow(String),
     #[error("workflow step not found: {0}")]
     MissingStep(String),
+    #[error("project task not found: {0}")]
+    TaskNotFound(u64),
+    #[error("project task not ready: {0}")]
+    TaskNotReady(u64),
+    #[error("invalid task state: {0}")]
+    InvalidTaskState(String),
 }
 
 impl RuntimeError {
@@ -32,6 +38,9 @@ impl RuntimeError {
             Self::MissingAction(_) => "ACTION_NOT_FOUND",
             Self::MissingWorkflow(_) => "WORKFLOW_NOT_FOUND",
             Self::MissingStep(_) => "WORKFLOW_STEP_NOT_FOUND",
+            Self::TaskNotFound(_) => "TASK_NOT_FOUND",
+            Self::TaskNotReady(_) => "TASK_NOT_READY",
+            Self::InvalidTaskState(_) => "INVALID_TASK_STATE",
         }
     }
 }
@@ -80,12 +89,25 @@ pub struct AgentTask {
     pub payload: Value,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProjectTask {
+    pub issue: u64,
+    pub title: String,
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claimed_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Runtime {
     pub records: BTreeMap<String, Vec<Record>>,
     pub events: Vec<EventEnvelope>,
     pub jobs: VecDeque<Job>,
     pub agent_tasks: VecDeque<AgentTask>,
+    #[serde(default)]
+    pub project_tasks: BTreeMap<u64, ProjectTask>,
 
     #[serde(skip)]
     pub subscriptions: Vec<Subscription>,
@@ -222,7 +244,7 @@ impl Runtime {
             .iter()
             .find(|event| event.id == job.event_id)
             .cloned()
-            .ok_or_else(|| RuntimeError::WorkflowNotFound(job.workflow.clone()))?;
+            .ok_or_else(|| RuntimeError::MissingWorkflow(job.workflow.clone()))?;
 
         let step = app
             .get(&job.step)
@@ -262,6 +284,62 @@ impl Runtime {
 
     pub fn take_agent_task(&mut self) -> Option<AgentTask> {
         self.agent_tasks.pop_front()
+    }
+
+    pub fn seed_project_tasks(&mut self, tasks: Vec<ProjectTask>) {
+        for task in tasks {
+            self.project_tasks.entry(task.issue).or_insert(task);
+        }
+    }
+
+    pub fn list_project_tasks(&self) -> Vec<ProjectTask> {
+        self.project_tasks.values().cloned().collect()
+    }
+
+    pub fn next_project_task(&self) -> Option<ProjectTask> {
+        self.project_tasks
+            .values()
+            .filter(|t| t.state == "READY")
+            .min_by_key(|t| t.issue)
+            .cloned()
+    }
+
+    pub fn claim_project_task(
+        &mut self,
+        issue: u64,
+        agent: String,
+    ) -> Result<ProjectTask, RuntimeError> {
+        let task = self
+            .project_tasks
+            .get_mut(&issue)
+            .ok_or(RuntimeError::TaskNotFound(issue))?;
+        if task.state != "READY" {
+            return Err(RuntimeError::TaskNotReady(issue));
+        }
+        task.state = "IN_PROGRESS".into();
+        task.claimed_by = Some(agent);
+        Ok(task.clone())
+    }
+
+    pub fn complete_project_task(
+        &mut self,
+        issue: u64,
+        state: String,
+        handoff: Option<String>,
+    ) -> Result<ProjectTask, RuntimeError> {
+        if state != "DONE" && state != "BLOCKED" {
+            return Err(RuntimeError::InvalidTaskState(state));
+        }
+        let task = self
+            .project_tasks
+            .get_mut(&issue)
+            .ok_or(RuntimeError::TaskNotFound(issue))?;
+        if task.state != "IN_PROGRESS" {
+            return Err(RuntimeError::TaskNotReady(issue));
+        }
+        task.state = state;
+        task.handoff = handoff;
+        Ok(task.clone())
     }
 
     pub fn subscribe(
@@ -485,5 +563,61 @@ mod tests {
         let update = runtime.take_update(subscription.id).unwrap();
         assert_eq!(update.source, "Ticket");
         assert_eq!(update.kind, "record.created");
+    }
+
+    #[test]
+    fn project_task_claim_and_complete() {
+        let mut runtime = Runtime::default();
+        runtime.seed_project_tasks(vec![
+            ProjectTask {
+                issue: 2,
+                title: "Durable Postgres execution backend".into(),
+                state: "READY".into(),
+                claimed_by: None,
+                handoff: None,
+            },
+            ProjectTask {
+                issue: 8,
+                title: "Build an agent task picker and handoff endpoint".into(),
+                state: "READY".into(),
+                claimed_by: None,
+                handoff: None,
+            },
+        ]);
+
+        assert_eq!(runtime.next_project_task().unwrap().issue, 2);
+
+        let claimed = runtime
+            .claim_project_task(2, "agent-1".into())
+            .unwrap();
+        assert_eq!(claimed.state, "IN_PROGRESS");
+
+        // Double-claim must fail with machine code.
+        let err = runtime.claim_project_task(2, "agent-2".into()).unwrap_err();
+        assert_eq!(err.code(), "TASK_NOT_READY");
+
+        let done = runtime
+            .complete_project_task(2, "DONE".into(), Some("seeded".into()))
+            .unwrap();
+        assert_eq!(done.state, "DONE");
+
+        assert_eq!(runtime.next_project_task().unwrap().issue, 8);
+    }
+
+    #[test]
+    fn project_task_rejects_bad_state() {
+        let mut runtime = Runtime::default();
+        runtime.seed_project_tasks(vec![ProjectTask {
+            issue: 8,
+            title: "picker".into(),
+            state: "READY".into(),
+            claimed_by: None,
+            handoff: None,
+        }]);
+        runtime.claim_project_task(8, "agent-1".into()).unwrap();
+        let err = runtime
+            .complete_project_task(8, "IN_PROGRESS".into(), None)
+            .unwrap_err();
+        assert_eq!(err.code(), "INVALID_TASK_STATE");
     }
 }

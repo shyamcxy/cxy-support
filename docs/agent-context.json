@@ -34,7 +34,12 @@
       "next_agent_task",
       "subscribe",
       "unsubscribe",
-      "next_update"
+      "next_update",
+      "list_tasks",
+      "next_task",
+      "seed_tasks",
+      "claim_task",
+      "complete_task"
     ]
   },
   "primitives": [
@@ -53,7 +58,8 @@
       "action_invocation",
       "workflow_execution",
       "agent_task_queue",
-      "realtime_subscriptions"
+      "realtime_subscriptions",
+      "project_task_queue"
     ],
     "planned": [
       "durable_postgres",

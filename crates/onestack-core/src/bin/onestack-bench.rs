@@ -2,7 +2,7 @@ use onestack_core::{engine::parse_oir, protocol::{handle, Request}, runtime::Run
 use serde_json::json;
 use std::time::Instant;
 
-const EXAMPLE: &str = include_str!("../../../examples/support.oir");
+const EXAMPLE: &str = include_str!("../../../../examples/support.oir");
 
 fn main() {
     let app = parse_oir(EXAMPLE).expect("example OIR must parse");

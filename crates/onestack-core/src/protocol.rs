@@ -30,6 +30,16 @@ pub struct Request {
     pub view: Option<String>,
     #[serde(default)]
     pub subscription_id: Option<u64>,
+    #[serde(default)]
+    pub issue: Option<u64>,
+    #[serde(default)]
+    pub agent: Option<String>,
+    #[serde(default)]
+    pub task_state: Option<String>,
+    #[serde(default)]
+    pub handoff: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
@@ -73,7 +83,11 @@ fn runtime_error(req: &Request, err: RuntimeError) -> ErrorPayload {
         code: err.code().to_owned(),
         message: err.to_string(),
         operation: Some(req.op.clone()),
-        node_id: req.node_id.clone().or_else(|| req.action.clone()),
+        node_id: req
+            .node_id
+            .clone()
+            .or_else(|| req.action.clone())
+            .or_else(|| req.issue.map(|i| i.to_string())),
         field: match err {
             RuntimeError::MissingField(field) | RuntimeError::InvalidField(field) => Some(field),
             _ => None,
@@ -113,6 +127,7 @@ pub fn handle(app: &mut App, runtime: &mut Runtime, req: Request) -> Response {
 
         "put" => req
             .node
+            .clone()
             .map(|node| {
                 let id = node.id().to_owned();
                 app.upsert(node);
@@ -122,6 +137,7 @@ pub fn handle(app: &mut App, runtime: &mut Runtime, req: Request) -> Response {
 
         "patch" => req
             .patch
+            .clone()
             .map(|patch| {
                 app.apply(patch);
                 json!({"nodes": app.nodes.len()})
@@ -206,6 +222,59 @@ pub fn handle(app: &mut App, runtime: &mut Runtime, req: Request) -> Response {
             .map_err(|err| runtime_error(&req, err)),
 
         "next_agent_task" => Ok(json!({"task": runtime.take_agent_task()})),
+
+        "list_tasks" => Ok(json!({"tasks": runtime.list_project_tasks()})),
+
+        "next_task" => Ok(json!({"task": runtime.next_project_task()})),
+
+        "seed_tasks" => {
+            let tasks = req
+                .payload
+                .clone()
+                .and_then(|p| serde_json::from_value::<Vec<crate::runtime::ProjectTask>>(p).ok())
+                .ok_or_else(|| error(&req, "MISSING_TASKS", "payload must be an array of {issue,title,state}"));
+            match tasks {
+                Ok(tasks) => {
+                    runtime.seed_project_tasks(tasks);
+                    Ok(json!({"tasks": runtime.list_project_tasks()}))
+                }
+                Err(err) => Err(err),
+            }
+        }
+
+        "claim_task" => {
+            let issue = req
+                .issue
+                .ok_or_else(|| error(&req, "MISSING_ISSUE", "issue is required"));
+            let agent = req
+                .agent
+                .clone()
+                .ok_or_else(|| error(&req, "MISSING_AGENT", "agent is required"));
+            match (issue, agent) {
+                (Ok(issue), Ok(agent)) => runtime
+                    .claim_project_task(issue, agent)
+                    .map(|task| json!({"task": task}))
+                    .map_err(|err| runtime_error(&req, err)),
+                (Err(err), _) | (_, Err(err)) => Err(err),
+            }
+        }
+
+        "complete_task" => {
+            let issue = req
+                .issue
+                .ok_or_else(|| error(&req, "MISSING_ISSUE", "issue is required"));
+            let state = req
+                .task_state
+                .clone()
+                .ok_or_else(|| error(&req, "MISSING_TASK_STATE", "task_state must be DONE or BLOCKED"));
+            match (issue, state) {
+                (Ok(issue), Ok(state)) => runtime
+                    .complete_project_task(issue, state, req.handoff.clone())
+                    .map(|task| json!({"task": task}))
+                    .map_err(|err| runtime_error(&req, err)),
+                (Err(err), _) | (_, Err(err)) => Err(err),
+            }
+        }
 
         "subscribe" => {
             let view = req
@@ -399,10 +468,81 @@ mod tests {
             payload: None,
             view: None,
             subscription_id: None,
+            issue: None,
+            agent: None,
+            task_state: None,
+            handoff: None,
+            title: None,
         };
 
         let response = handle(&mut app, &mut runtime, request);
         assert!(response.ok);
         assert!(app.get("User").is_some());
+    }
+
+    #[test]
+    fn task_picker_round_trip() {
+        let mut app = App::new("test");
+        let mut runtime = Runtime::default();
+
+        let seed = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({
+                "id": 1,
+                "op": "seed_tasks",
+                "payload": [
+                    {"issue": 2, "title": "Durable Postgres execution backend", "state": "READY"},
+                    {"issue": 8, "title": "Build an agent task picker and handoff endpoint", "state": "READY"}
+                ]
+            }))
+            .unwrap(),
+        );
+        assert!(seed.ok);
+
+        let next = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({"id": 2, "op": "next_task"})).unwrap(),
+        );
+        assert_eq!(next.result.unwrap()["task"]["issue"], 2);
+
+        let claim = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({"id": 3, "op": "claim_task", "issue": 2, "agent": "agent-1"}))
+                .unwrap(),
+        );
+        assert!(claim.ok);
+
+        let done = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({"id": 4, "op": "complete_task", "issue": 2, "task_state": "DONE", "handoff": "seeded"}))
+                .unwrap(),
+        );
+        assert!(done.ok);
+        assert_eq!(done.result.unwrap()["task"]["state"], "DONE");
+
+        let next2 = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({"id": 5, "op": "next_task"})).unwrap(),
+        );
+        assert_eq!(next2.result.unwrap()["task"]["issue"], 8);
+    }
+
+    #[test]
+    fn claim_missing_task_has_machine_code() {
+        let mut app = App::new("test");
+        let mut runtime = Runtime::default();
+        let response = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({"id": 1, "op": "claim_task", "issue": 99, "agent": "a"}))
+                .unwrap(),
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error.unwrap().code, "TASK_NOT_FOUND");
     }
 }

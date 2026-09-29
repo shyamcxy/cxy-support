@@ -2,6 +2,7 @@ pub mod engine;
 pub mod http;
 pub mod protocol;
 pub mod runtime;
+pub mod storage;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};

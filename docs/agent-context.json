@@ -5,17 +5,65 @@
   "north_star": {
     "input": "natural-language application intent",
     "output": "working executable application",
-    "optimize_for": ["tokens", "tool_calls", "context", "determinism", "safe_mutation"]
+    "optimize_for": [
+      "tokens",
+      "tool_calls",
+      "context",
+      "determinism",
+      "safe_mutation"
+    ]
   },
   "control_plane": {
     "representation": "application graph",
     "protocol": "NDJSON over stdin/stdout",
-    "operations": ["list", "inspect", "deps", "put", "patch", "validate", "create", "query", "emit", "next_job", "invoke", "snapshot", "runtime_snapshot"]
+    "operations": [
+      "list",
+      "inspect",
+      "deps",
+      "put",
+      "patch",
+      "validate",
+      "create",
+      "query",
+      "emit",
+      "next_job",
+      "invoke",
+      "snapshot",
+      "runtime_snapshot",
+      "execute_job",
+      "next_agent_task",
+      "subscribe",
+      "unsubscribe",
+      "next_update"
+    ]
   },
-  "primitives": ["Entity", "Action", "Event", "Workflow", "Agent", "View"],
+  "primitives": [
+    "Entity",
+    "Action",
+    "Event",
+    "Workflow",
+    "Agent",
+    "View"
+  ],
   "execution_plane": {
-    "implemented": ["records", "events", "workflow_jobs", "action_invocation"],
-    "planned": ["durable_postgres", "http", "websocket", "worker_execution", "auth", "generated_ui", "deployment"]
+    "implemented": [
+      "records",
+      "events",
+      "workflow_jobs",
+      "action_invocation",
+      "workflow_execution",
+      "agent_task_queue",
+      "realtime_subscriptions"
+    ],
+    "planned": [
+      "durable_postgres",
+      "http",
+      "websocket",
+      "worker_execution",
+      "auth",
+      "generated_ui",
+      "deployment"
+    ]
   },
   "runtime": {
     "language": "Rust",

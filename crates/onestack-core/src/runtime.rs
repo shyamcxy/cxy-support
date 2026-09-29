@@ -375,6 +375,12 @@ impl Runtime {
             job.clone()
         };
 
+        self.publish(
+            &job_snapshot.kind,
+            "job.updated",
+            serde_json::to_value(&job_snapshot).unwrap_or(Value::Null),
+        );
+
         if state == ExecutionState::Completed {
             if let Some(payload) = result {
                 self.emit_job_events(app, &job_snapshot, payload);
@@ -764,6 +770,37 @@ mod tests {
         ).unwrap();
         assert_eq!(completed.state, ExecutionState::Completed);
         assert_eq!(runtime.events[0].name, "video.completed");
+    }
+
+    #[test]
+    fn realtime_subscription_receives_job_progress() {
+        let mut app = App::new("video");
+        app.upsert(Node::Job {
+            id: "generateVideo".into(),
+            input: BTreeMap::new(),
+            creates: vec![],
+            emits: vec![],
+            progress: true,
+            timeout_ms: 600_000,
+            retries: 1,
+        });
+        app.upsert(Node::View {
+            id: "generations".into(),
+            source: "generateVideo".into(),
+            realtime: true,
+        });
+
+        let mut runtime = Runtime::default();
+        let subscription = runtime.subscribe(&app, "generations").unwrap();
+        let job = runtime.start_job(&app, "generateVideo", Map::new()).unwrap();
+        let running = runtime.take_execution_job().unwrap();
+        runtime.update_execution_job(&app, running.id, ExecutionState::Running, 0.4, None, None).unwrap();
+
+        let update = runtime.take_update(subscription.id).unwrap();
+        assert_eq!(update.kind, "job.updated");
+        assert_eq!(update.source, "generateVideo");
+        assert_eq!(update.payload["progress"], 0.4);
+        assert_eq!(job.state, ExecutionState::Queued);
     }
 
     #[test]

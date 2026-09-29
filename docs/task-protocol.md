@@ -57,3 +57,16 @@ Humans discuss product direction here.
 Agents execute READY issues.
 
 The repository plus issue history should be enough for a fresh agent to continue the project.
+
+## Current machine-visible task queue
+
+GitHub Issues remain the authoritative task records. The repo keeps a compact mirror at `docs/task-queue.json` for agents that need cheap context before calling external project-management tools.
+
+An agent should prefer one task at a time. When an issue is IN PROGRESS, inspect its comments before duplicating work.
+
+## Completion status semantics
+
+- READY: untouched and safe to claim.
+- IN PROGRESS: implementation may already exist; verify, finish, or continue it rather than restarting blindly.
+- DONE: acceptance criteria and verification are complete.
+- BLOCKED: explicit external dependency or unresolved contract.

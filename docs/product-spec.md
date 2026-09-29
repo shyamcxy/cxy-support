@@ -48,6 +48,16 @@ A semantic application must survive replacement of local storage with Postgres, 
 ### 5. Agent-first economics
 Every operation should be designed around token/context/tool-call cost.
 
+## General-purpose application model
+
+The core model must express both ordinary SaaS applications and compute-heavy AI products. A video-generation product is a reference stress test, not the product itself.
+
+First-class concepts now include:
+- Job: long-running execution with progress and terminal state.
+- File: application-owned file resource metadata with an opaque URI.
+
+The runtime must keep model execution, storage provider, and cloud infrastructure behind semantic operations.
+
 ## v0.1 product boundary
 In:
 - application graph;

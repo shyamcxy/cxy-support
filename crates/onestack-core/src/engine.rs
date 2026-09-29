@@ -163,3 +163,60 @@ pub fn validate(app: &App) -> Vec<String> {
     }
     errors.into_iter().collect()
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_agent_oriented_oir() {
+        let source = r#"
+APP support
+
+ENTITY User
+  email:String required
+  name:String required
+
+ENTITY Ticket
+  user:Reference(User) required
+  message:String required
+  status:String required
+
+ACTION createTicket
+  input message:String
+  creates Ticket
+  emits ticket.created
+  requires_auth true
+
+EVENT ticket.created
+
+AGENT supportAgent
+  reads Ticket
+  writes Ticket
+
+WORKFLOW onTicketCreated
+  trigger ticket.created
+  steps supportAgent
+
+VIEW tickets
+  source Ticket
+  realtime true
+"#;
+
+        let app = parse_oir(source).expect("parse");
+        assert_eq!(app.name, "support");
+        assert_eq!(app.nodes.len(), 7);
+        assert!(validate(&app).is_empty());
+        assert!(app.dependencies("Ticket").contains("User"));
+        assert!(app.dependencies("onTicketCreated").contains("ticket.created"));
+    }
+
+    #[test]
+    fn reports_missing_dependencies() {
+        let mut app = App::new("broken");
+        app.upsert(Node::View { id: "tickets".into(), source: "Ticket".into(), realtime: true });
+        let errors = validate(&app);
+        assert_eq!(errors, vec!["tickets references missing node Ticket".to_string()]);
+    }
+}

@@ -70,3 +70,18 @@ Preferred sequence:
 6. update task state and docs.
 
 This is itself a product requirement.
+
+## General-purpose application primitives
+
+The current semantic graph is intentionally broad enough to model both CRUD SaaS and compute-heavy AI products:
+
+- Entity — structured persistent data.
+- Action — short request/response operation.
+- Event — semantic fact.
+- Workflow — event-driven orchestration.
+- Agent — AI execution actor.
+- View — read surface, optionally realtime.
+- File — application file type/resource metadata.
+- Job — long-running execution with progress and terminal state.
+
+A Job may be backed by a GPU worker, external model API, container, or cloud queue. A File may be backed by S3-compatible storage, a CDN, local storage, or another provider. Those providers are not part of the agent's mental model.

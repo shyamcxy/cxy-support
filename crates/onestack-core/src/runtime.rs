@@ -26,6 +26,7 @@ pub enum RuntimeError {
     TaskNotReady(u64),
     #[error("invalid task state: {0}")]
     InvalidTaskState(String),
+    MissingExecutionJob(u64),
 }
 
 impl RuntimeError {
@@ -41,6 +42,7 @@ impl RuntimeError {
             Self::TaskNotFound(_) => "TASK_NOT_FOUND",
             Self::TaskNotReady(_) => "TASK_NOT_READY",
             Self::InvalidTaskState(_) => "INVALID_TASK_STATE",
+            Self::MissingExecutionJob(_) => "EXECUTION_JOB_NOT_FOUND",
         }
     }
 }
@@ -59,7 +61,7 @@ pub struct EventEnvelope {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Job {
+pub struct WorkflowJob {
     pub workflow: String,
     pub step: String,
     pub event_id: u64,
@@ -100,14 +102,41 @@ pub struct ProjectTask {
     pub handoff: Option<String>,
 }
 
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ExecutionState {
+    Queued,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LongJob {
+    pub id: u64,
+    pub kind: String,
+    pub state: ExecutionState,
+    pub progress: f32,
+    pub input: Map<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Runtime {
     pub records: BTreeMap<String, Vec<Record>>,
     pub events: Vec<EventEnvelope>,
-    pub jobs: VecDeque<Job>,
+    pub jobs: VecDeque<WorkflowJob>,
     pub agent_tasks: VecDeque<AgentTask>,
     #[serde(default)]
     pub project_tasks: BTreeMap<u64, ProjectTask>,
+    #[serde(default)]
+    pub execution_jobs: BTreeMap<u64, LongJob>,
+    #[serde(default)]
+    pub pending_execution_jobs: VecDeque<u64>,
 
     #[serde(skip)]
     pub subscriptions: Vec<Subscription>,
@@ -118,6 +147,7 @@ pub struct Runtime {
     next_event_id: u64,
     next_subscription_id: u64,
     next_agent_task_id: u64,
+    next_execution_job_id: u64,
 }
 
 impl Runtime {
@@ -217,7 +247,7 @@ impl Runtime {
             {
                 if trigger == &event.name {
                     for step in steps {
-                        self.jobs.push_back(Job {
+                        self.jobs.push_back(WorkflowJob {
                             workflow: id.clone(),
                             step: step.clone(),
                             event_id: event.id,
@@ -230,8 +260,95 @@ impl Runtime {
         event
     }
 
-    pub fn take_job(&mut self) -> Option<Job> {
+    pub fn take_job(&mut self) -> Option<WorkflowJob> {
         self.jobs.pop_front()
+    }
+
+    pub fn start_job(
+        &mut self,
+        app: &App,
+        job_kind: &str,
+        input: Map<String, Value>,
+    ) -> Result<LongJob, RuntimeError> {
+        let node = app
+            .get(job_kind)
+            .ok_or_else(|| RuntimeError::MissingStep(job_kind.into()))?;
+
+        let Node::Job { input: schema, .. } = node else {
+            return Err(RuntimeError::MissingStep(job_kind.into()));
+        };
+
+        validate_fields(schema, &input)?;
+
+        self.next_execution_job_id += 1;
+        let job = LongJob {
+            id: self.next_execution_job_id,
+            kind: job_kind.into(),
+            state: ExecutionState::Queued,
+            progress: 0.0,
+            input,
+            result: None,
+            error: None,
+        };
+
+        self.execution_jobs.insert(job.id, job.clone());
+        self.pending_execution_jobs.push_back(job.id);
+        Ok(job)
+    }
+
+    pub fn take_execution_job(&mut self) -> Option<LongJob> {
+        let id = self.pending_execution_jobs.pop_front()?;
+        let job = self.execution_jobs.get_mut(&id)?;
+        if job.state == ExecutionState::Queued {
+            job.state = ExecutionState::Running;
+        }
+        Some(job.clone())
+    }
+
+    pub fn update_execution_job(
+        &mut self,
+        app: &App,
+        id: u64,
+        state: ExecutionState,
+        progress: f32,
+        result: Option<Value>,
+        error: Option<String>,
+    ) -> Result<LongJob, RuntimeError> {
+        if !(0.0..=1.0).contains(&progress) {
+            return Err(RuntimeError::InvalidTaskState(format!("progress must be between 0 and 1, got {progress}")));
+        }
+
+        let job = self
+            .execution_jobs
+            .get_mut(&id)
+            .ok_or(RuntimeError::MissingExecutionJob(id))?;
+
+        job.state = state.clone();
+        job.progress = progress;
+        job.result = result.clone();
+        job.error = error.clone();
+
+        if matches!(state, ExecutionState::Completed | ExecutionState::Failed | ExecutionState::Cancelled) {
+            if state == ExecutionState::Completed {
+                if let Some(payload) = result {
+                    self.emit_job_events(app, job, payload);
+                }
+            }
+        }
+
+        Ok(job.clone())
+    }
+
+    fn emit_job_events(&mut self, app: &App, job: &LongJob, payload: Value) {
+        if let Some(Node::Job { emits, .. }) = app.get(&job.kind) {
+            for event in emits.clone() {
+                self.emit(app, event, payload.clone());
+            }
+        }
+    }
+
+    pub fn get_execution_job(&self, id: u64) -> Option<LongJob> {
+        self.execution_jobs.get(&id).cloned()
     }
 
     pub fn execute_next_job(&mut self, app: &App) -> Result<Option<JobResult>, RuntimeError> {
@@ -402,12 +519,12 @@ impl Runtime {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum JobResult {
     Action {
-        job: Job,
+        job: WorkflowJob,
         record: Option<Record>,
         events: Vec<EventEnvelope>,
     },
     AgentQueued {
-        job: Job,
+        job: WorkflowJob,
         task: AgentTask,
     },
 }
@@ -548,6 +665,46 @@ mod tests {
         }
 
         assert_eq!(runtime.take_agent_task().unwrap().agent, "supportAgent");
+    }
+
+    #[test]
+    fn long_running_job_lifecycle_emits_on_completion() {
+        let mut app = App::new("video");
+        let mut input = BTreeMap::new();
+        input.insert("prompt".into(), crate::Field { ty: FieldType::String, required: true });
+
+        app.upsert(Node::File { id: "Video".into(), content_type: "video/mp4".into(), public: false });
+        app.upsert(Node::Job {
+            id: "generateVideo".into(),
+            input,
+            creates: vec!["Video".into()],
+            emits: vec!["video.completed".into()],
+            progress: true,
+            timeout_ms: 600_000,
+            retries: 2,
+        });
+        app.upsert(Node::Event { id: "video.completed".into() });
+
+        let mut runtime = Runtime::default();
+        let mut values = Map::new();
+        values.insert("prompt".into(), Value::String("a cinematic desert".into()));
+
+        let job = runtime.start_job(&app, "generateVideo", values).unwrap();
+        assert_eq!(job.state, ExecutionState::Queued);
+
+        let running = runtime.take_execution_job().unwrap();
+        assert_eq!(running.state, ExecutionState::Running);
+
+        let completed = runtime.update_execution_job(
+            &app,
+            running.id,
+            ExecutionState::Completed,
+            1.0,
+            Some(serde_json::json!({"file_id":"f1"})),
+            None,
+        ).unwrap();
+        assert_eq!(completed.state, ExecutionState::Completed);
+        assert_eq!(runtime.events[0].name, "video.completed");
     }
 
     #[test]

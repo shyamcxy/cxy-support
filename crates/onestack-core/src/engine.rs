@@ -211,6 +211,8 @@ VIEW tickets
 FILE Video
   content_type video/mp4
 
+EVENT video.completed
+
 JOB generateVideo
   input prompt:String
   creates Video

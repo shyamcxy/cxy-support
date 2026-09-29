@@ -561,6 +561,77 @@ mod tests {
     }
 
     #[test]
+    fn long_running_job_protocol_round_trip() {
+        let mut app = App::new("video");
+        let mut input = std::collections::BTreeMap::new();
+        input.insert("prompt".into(), Field { ty: FieldType::String, required: true });
+        app.upsert(Node::Job {
+            id: "generateVideo".into(),
+            input,
+            creates: vec!["VideoAsset".into()],
+            emits: vec!["video.completed".into()],
+            progress: true,
+            timeout_ms: 600_000,
+            retries: 2,
+        });
+        app.upsert(Node::File {
+            id: "VideoAsset".into(),
+            content_type: "video/mp4".into(),
+            public: false,
+        });
+        app.upsert(Node::Event { id: "video.completed".into() });
+
+        let mut runtime = Runtime::default();
+        let response = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({
+                "id": 1,
+                "op": "start_job",
+                "job": "generateVideo",
+                "data": {"prompt":"cinematic desert"}
+            })).unwrap(),
+        );
+        assert!(response.ok);
+        assert_eq!(response.result.unwrap()["job"]["state"], "Queued");
+    }
+
+    #[test]
+    fn file_protocol_round_trip() {
+        let mut app = App::new("files");
+        let mut runtime = Runtime::default();
+
+        let response = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({
+                "id": 1,
+                "op": "register_file",
+                "payload": {
+                    "name": "clip.mp4",
+                    "content_type": "video/mp4",
+                    "size": 42,
+                    "uri": "s3://bucket/clip.mp4",
+                    "kind": "VideoAsset"
+                }
+            })).unwrap(),
+        );
+        assert!(response.ok);
+        assert_eq!(response.result.unwrap()["file"]["id"], "file_1");
+
+        let response = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({
+                "id": 2,
+                "op": "get_file",
+                "file_id": "file_1"
+            })).unwrap(),
+        );
+        assert_eq!(response.result.unwrap()["file"]["name"], "clip.mp4");
+    }
+
+    #[test]
     fn patch_operation_is_machine_friendly() {
         let mut app = App::new("test");
         let mut runtime = Runtime::default();

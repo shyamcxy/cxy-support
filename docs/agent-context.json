@@ -63,7 +63,8 @@
     "Agent",
     "View",
     "File",
-    "Job"
+    "Job",
+    "Policy"
   ],
   "execution_plane": {
     "implemented": [
@@ -76,7 +77,9 @@
       "realtime_subscriptions",
       "project_task_queue",
       "long_running_jobs",
-      "file_metadata"
+      "file_metadata",
+      "policy_evaluation",
+      "local_object_storage_abstraction"
     ],
     "planned": [
       "durable_postgres",
@@ -85,7 +88,8 @@
       "generated_ui",
       "deployment",
       "object_storage",
-      "policy_enforcement"
+      "policy_enforcement",
+      "s3_object_storage"
     ]
   },
   "runtime": {

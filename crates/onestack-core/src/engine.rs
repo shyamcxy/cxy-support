@@ -33,7 +33,7 @@ pub fn parse_oir(source: &str) -> Result<App, EngineError> {
                         lines.next();
                         continue;
                     }
-                    if candidate.split_whitespace().next().map(|x| matches!(x, "ENTITY"|"ACTION"|"EVENT"|"AGENT"|"WORKFLOW"|"VIEW")).unwrap_or(false) { break; }
+                    if candidate.split_whitespace().next().map(|x| matches!(x, "ENTITY"|"ACTION"|"EVENT"|"AGENT"|"WORKFLOW"|"VIEW"|"FILE"|"JOB")).unwrap_or(false) { break; }
                     let Some((name, rest)) = candidate.split_once(':') else { break; };
                     lines.next();
                     let mut p = rest.split_whitespace();
@@ -53,7 +53,7 @@ pub fn parse_oir(source: &str) -> Result<App, EngineError> {
                     let candidate = peek_raw.trim();
                     if candidate.is_empty() || candidate.starts_with('#') { lines.next(); continue; }
                     let key = candidate.split_whitespace().next().unwrap_or("");
-                    if matches!(key, "ENTITY"|"ACTION"|"EVENT"|"AGENT"|"WORKFLOW"|"VIEW") { break; }
+                    if matches!(key, "ENTITY"|"ACTION"|"EVENT"|"AGENT"|"WORKFLOW"|"VIEW"|"FILE"|"JOB") { break; }
                     if let Some(rest) = candidate.strip_prefix("input ") {
                         lines.next();
                         let (name, ty) = rest.split_once(':').ok_or_else(|| EngineError::Parse { line: peek_idx + 1, message: "input needs name:type".into() })?;
@@ -155,9 +155,14 @@ pub fn validate(app: &App) -> Vec<String> {
                 errors.insert(format!("workflow {} trigger {} is not an Event", node.id(), trigger));
             }
         }
+        if let Node::Job { timeout_ms, .. } = node {
+            if *timeout_ms == 0 {
+                errors.insert(format!("job {} timeout_ms must be > 0", node.id()));
+            }
+        }
         if let Node::View { source, .. } = node {
-            if !matches!(app.get(source), Some(Node::Entity { .. })) {
-                errors.insert(format!("view {} source {} is not an Entity", node.id(), source));
+            if !matches!(app.get(source), Some(Node::Entity { .. }) | Some(Node::Job { .. })) {
+                errors.insert(format!("view {} source {} is not an Entity or Job", node.id(), source));
             }
         }
     }
@@ -202,11 +207,24 @@ WORKFLOW onTicketCreated
 VIEW tickets
   source Ticket
   realtime true
+
+FILE Video
+  content_type video/mp4
+
+EVENT video.completed
+
+JOB generateVideo
+  input prompt:String
+  creates Video
+  emits video.completed
+  progress true
+  timeout_ms 600000
+  retries 2
 "#;
 
         let app = parse_oir(source).expect("parse");
         assert_eq!(app.name, "support");
-        assert_eq!(app.nodes.len(), 7);
+        assert_eq!(app.nodes.len(), 10);
         assert!(validate(&app).is_empty());
         assert!(app.dependencies("Ticket").contains("User"));
         assert!(app.dependencies("onTicketCreated").contains("ticket.created"));
@@ -221,7 +239,7 @@ VIEW tickets
             errors,
             vec![
                 "tickets references missing node Ticket".to_string(),
-                "view tickets source Ticket is not an Entity".to_string()
+                "view tickets source Ticket is not an Entity or Job".to_string()
             ]
         );
     }

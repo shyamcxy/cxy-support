@@ -1,0 +1,44 @@
+APP video-studio
+
+ENTITY User
+  email:String required
+
+ENTITY Project
+  name:String required
+  owner:Reference(User) required
+
+ENTITY Generation
+  project:Reference(Project) required
+  prompt:String required
+  status:String required
+
+FILE VideoAsset
+  content_type video/mp4
+  public false
+
+EVENT generation.completed
+EVENT generation.failed
+
+JOB generateVideo
+  input prompt:String
+  creates VideoAsset
+  emits generation.completed
+  progress true
+  timeout_ms 900000
+  retries 2
+
+AGENT moderationAgent
+  reads Generation
+  writes Generation
+
+WORKFLOW onGenerationComplete
+  trigger generation.completed
+  steps moderationAgent
+
+VIEW projectGenerations
+  source Generation
+  realtime true
+
+VIEW generationJobs
+  source generateVideo
+  realtime true

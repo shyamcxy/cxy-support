@@ -203,3 +203,26 @@ Run locally with:
 ```bash
 cargo run -p onestack-core --bin onestack -- http 127.0.0.1:8787
 ```
+
+### Long-running Jobs
+
+The semantic Job primitive is independent from the existing workflow queue.
+
+```json
+{"id":21,"op":"start_job","job":"generateVideo","data":{"prompt":"cinematic desert"}}
+{"id":22,"op":"next_execution_job"}
+{"id":23,"op":"get_job","job_id":1}
+{"id":24,"op":"update_job","job_id":1,"task_state":"completed","progress":1,"payload":{"file_id":"file_1"}}
+```
+
+Providers such as GPU workers, container jobs, external inference APIs, and cloud queues implement the execution behind this semantic contract.
+
+### Files
+
+Files are represented by stable metadata plus an opaque URI. The current prototype uses local metadata storage; object storage is a future adapter.
+
+```json
+{"id":30,"op":"register_file","payload":{"name":"clip.mp4","content_type":"video/mp4","size":1024,"uri":"s3://bucket/clip.mp4","kind":"VideoAsset"}}
+{"id":31,"op":"get_file","file_id":"file_1"}
+{"id":32,"op":"list_files"}
+```

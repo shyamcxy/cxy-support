@@ -5,6 +5,8 @@ GitHub Issues are authoritative. `docs/task-queue.json` is the compact mirror.
 ## READY
 - Issue #2 — Durable Postgres execution backend
 - Issue #8 — Agent task picker and handoff endpoint
+- Issue #9 — Object storage backend for File resources
+- Issue #10 — First-class authorization policies
 
 ## IN PROGRESS / NEEDS VERIFICATION
 - Issue #3 — HTTP transport
@@ -27,7 +29,11 @@ GitHub Issues are authoritative. `docs/task-queue.json` is the compact mirror.
 - Workflow job execution
 - AgentTask queue
 - Realtime subscription/update primitives
-- Deterministic interaction-cost benchmark harness
+- Project task queue operations
+- Long-running Job primitive
+- File resource metadata primitive
+- Realtime Job progress updates
+- AI video application stress-test example
 
 ## Important
-Items in IN PROGRESS / NEEDS VERIFICATION have implementation on `onestack/v0.1-agent-core` but require a real Cargo/CI run before being marked DONE.
+Items in IN PROGRESS / NEEDS VERIFICATION have implementation on their relevant branch but require a real Cargo/CI run before being marked DONE.

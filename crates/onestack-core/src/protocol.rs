@@ -21,6 +21,8 @@ pub struct Request {
     #[serde(default)]
     pub job_id: Option<u64>,
     #[serde(default)]
+    pub file_id: Option<String>,
+    #[serde(default)]
     pub progress: Option<f32>,
     #[serde(default)]
     pub error_message: Option<String>,
@@ -315,10 +317,10 @@ pub fn handle(app: &mut App, runtime: &mut Runtime, req: Request) -> Response {
 
         "get_file" => {
             let id = req
-                .job_id
-                .map(|x| x.to_string())
+                .file_id
+                .clone()
                 .or_else(|| req.node_id.clone())
-                .ok_or_else(|| error(&req, "MISSING_FILE_ID", "node_id must contain file id"));
+                .ok_or_else(|| error(&req, "MISSING_FILE_ID", "file_id is required"));
             match id {
                 Ok(id) => Ok(json!({"file": runtime.get_file(&id)})),
                 Err(err) => Err(err),
@@ -574,6 +576,7 @@ mod tests {
             action: None,
             job: None,
             job_id: None,
+            file_id: None,
             progress: None,
             error_message: None,
             patch: Some(patch_upsert(node)),

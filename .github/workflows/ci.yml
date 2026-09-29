@@ -1,0 +1,20 @@
+name: OneStack CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "onestack/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo fmt --all -- --check
+      - run: cargo test --workspace

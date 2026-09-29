@@ -1,0 +1,89 @@
+{
+  "project": "OneStack",
+  "version": "0.1",
+  "mission": "Application runtime designed for AI agents as the primary developers",
+  "north_star": {
+    "input": "natural-language application intent",
+    "output": "working executable application",
+    "optimize_for": [
+      "tokens",
+      "tool_calls",
+      "context",
+      "determinism",
+      "safe_mutation"
+    ]
+  },
+  "control_plane": {
+    "representation": "application graph",
+    "protocol": "NDJSON over stdin/stdout",
+    "operations": [
+      "list",
+      "inspect",
+      "deps",
+      "put",
+      "patch",
+      "validate",
+      "create",
+      "query",
+      "emit",
+      "next_job",
+      "invoke",
+      "snapshot",
+      "runtime_snapshot",
+      "execute_job",
+      "next_agent_task",
+      "subscribe",
+      "unsubscribe",
+      "next_update"
+    ]
+  },
+  "primitives": [
+    "Entity",
+    "Action",
+    "Event",
+    "Workflow",
+    "Agent",
+    "View"
+  ],
+  "execution_plane": {
+    "implemented": [
+      "records",
+      "events",
+      "workflow_jobs",
+      "action_invocation",
+      "workflow_execution",
+      "agent_task_queue",
+      "realtime_subscriptions"
+    ],
+    "planned": [
+      "durable_postgres",
+      "http",
+      "websocket",
+      "worker_execution",
+      "auth",
+      "generated_ui",
+      "deployment"
+    ]
+  },
+  "runtime": {
+    "language": "Rust",
+    "current_storage": "local JSON state",
+    "target_storage": "Postgres",
+    "ui_target": "generated frontend",
+    "single_service_goal": true
+  },
+  "agent_contract": {
+    "inspect_before_mutate": true,
+    "validate_after_mutate": true,
+    "tests_required": true,
+    "docs_required_when_contract_changes": true,
+    "do_not_claim_unrun_tests": true
+  },
+  "handoff": {
+    "canonical_context": "AGENTS.md",
+    "product_spec": "docs/product-spec.md",
+    "technical_spec": "docs/technical-spec.md",
+    "architecture": "docs/architecture.md",
+    "task_protocol": "docs/task-protocol.md"
+  }
+}

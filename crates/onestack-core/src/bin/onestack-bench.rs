@@ -24,8 +24,8 @@ fn main() {
         json!({"id":3,"op":"validate"})
     ];
 
-    for value in operations {
-        let request: Request = serde_json::from_value(value).expect("request");
+    for value in &operations {
+        let request: Request = serde_json::from_value(value.clone()).expect("request");
         let response = handle(&mut app.clone(), &mut runtime, request);
         assert!(response.ok);
     }

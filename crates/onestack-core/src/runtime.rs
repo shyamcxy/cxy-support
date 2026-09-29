@@ -258,6 +258,24 @@ impl Runtime {
         action: &str,
         values: Map<String, Value>,
     ) -> Result<(Option<Record>, Vec<EventEnvelope>), RuntimeError> {
+        self.invoke_action_as(app, "*", action, action, values)
+    }
+
+    pub fn invoke_action_as(
+        &mut self,
+        app: &App,
+        subject: &str,
+        action: &str,
+        resource: &str,
+        values: Map<String, Value>,
+    ) -> Result<(Option<Record>, Vec<EventEnvelope>), RuntimeError> {
+        if !self.authorize(app, subject, action, resource, &values) {
+            return Err(RuntimeError::PolicyDenied {
+                action: action.into(),
+                resource: resource.into(),
+            });
+        }
+
         let (input, creates, emits) = match app.get(action) {
             Some(Node::Action {
                 input,
@@ -719,6 +737,39 @@ mod tests {
         });
 
         app
+    }
+
+    #[test]
+    fn policy_allows_and_denies_actions() {
+        let mut app = App::new("secure");
+        app.upsert(Node::Action {
+            id: "refund".into(),
+            input: BTreeMap::new(),
+            creates: vec![],
+            emits: vec![],
+            requires_auth: true,
+        });
+        app.upsert(Node::Policy {
+            id: "allowBilling".into(),
+            subject: "billing-agent".into(),
+            action: "refund".into(),
+            resource: "refund".into(),
+            allow: true,
+            condition: None,
+        });
+        app.upsert(Node::Policy {
+            id: "denyEverythingElse".into(),
+            subject: "*".into(),
+            action: "refund".into(),
+            resource: "refund".into(),
+            allow: false,
+            condition: None,
+        });
+
+        let runtime = Runtime::default();
+        let ctx = Map::new();
+        assert!(runtime.authorize(&app, "billing-agent", "refund", "refund", &ctx));
+        assert!(!runtime.authorize(&app, "other-agent", "refund", "refund", &ctx));
     }
 
     #[test]

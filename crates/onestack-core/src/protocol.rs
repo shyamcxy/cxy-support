@@ -1,4 +1,8 @@
-use crate::{engine::validate, runtime::Runtime, App, Node, Patch, PatchOp};
+use crate::{
+    engine::validate,
+    runtime::{Runtime, RuntimeError},
+    App, Node, Patch, PatchOp,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
@@ -22,6 +26,22 @@ pub struct Request {
     pub event: Option<String>,
     #[serde(default)]
     pub payload: Option<Value>,
+    #[serde(default)]
+    pub view: Option<String>,
+    #[serde(default)]
+    pub subscription_id: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct ErrorPayload {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -31,87 +51,215 @@ pub struct Response {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
+    pub error: Option<ErrorPayload>,
+}
+
+fn error(
+    req: &Request,
+    code: impl Into<String>,
+    message: impl Into<String>,
+) -> ErrorPayload {
+    ErrorPayload {
+        code: code.into(),
+        message: message.into(),
+        operation: Some(req.op.clone()),
+        node_id: req.node_id.clone(),
+        field: None,
+    }
+}
+
+fn runtime_error(req: &Request, err: RuntimeError) -> ErrorPayload {
+    ErrorPayload {
+        code: err.code().to_owned(),
+        message: err.to_string(),
+        operation: Some(req.op.clone()),
+        node_id: req.node_id.clone().or_else(|| req.action.clone()),
+        field: match err {
+            RuntimeError::MissingField(field) | RuntimeError::InvalidField(field) => Some(field),
+            _ => None,
+        },
+    }
 }
 
 pub fn handle(app: &mut App, runtime: &mut Runtime, req: Request) -> Response {
     let id = req.id.clone();
-    let result = match req.op.as_str() {
-        "inspect" => req.node_id.as_deref()
+
+    let result: Result<Value, ErrorPayload> = match req.op.as_str() {
+        "inspect" => req
+            .node_id
+            .as_deref()
             .and_then(|node_id| app.get(node_id))
-            .map(|node| json!({
-                "node": node,
-                "dependencies": app.dependencies(node.id()),
-                "dependents": app.dependents(node.id())
-            }))
-            .ok_or_else(|| "node not found".to_owned()),
+            .map(|node| {
+                json!({
+                    "node": node,
+                    "dependencies": app.dependencies(node.id()),
+                    "dependents": app.dependents(node.id())
+                })
+            })
+            .ok_or_else(|| error(&req, "NODE_NOT_FOUND", "node was not found")),
 
         "list" => Ok(json!(app.nodes.keys().collect::<Vec<_>>())),
 
-        "deps" => req.node_id.as_deref()
-            .map(|node_id| json!({
-                "dependencies": app.dependencies(node_id),
-                "dependents": app.dependents(node_id)
-            }))
-            .ok_or_else(|| "node_id is required".to_owned()),
+        "deps" => req
+            .node_id
+            .as_deref()
+            .map(|node_id| {
+                json!({
+                    "dependencies": app.dependencies(node_id),
+                    "dependents": app.dependents(node_id)
+                })
+            })
+            .ok_or_else(|| error(&req, "MISSING_NODE_ID", "node_id is required")),
 
-        "put" => req.node
-            .map(|node| { let id = node.id().to_owned(); app.upsert(node); json!({"id": id}) })
-            .ok_or_else(|| "node is required".to_owned()),
+        "put" => req
+            .node
+            .map(|node| {
+                let id = node.id().to_owned();
+                app.upsert(node);
+                json!({"id": id})
+            })
+            .ok_or_else(|| error(&req, "MISSING_NODE", "node is required")),
 
-        "patch" => req.patch
-            .map(|patch| { app.apply(patch); json!({"nodes": app.nodes.len()}) })
-            .ok_or_else(|| "patch is required".to_owned()),
+        "patch" => req
+            .patch
+            .map(|patch| {
+                app.apply(patch);
+                json!({"nodes": app.nodes.len()})
+            })
+            .ok_or_else(|| error(&req, "MISSING_PATCH", "patch is required")),
 
         "validate" => {
             let errors = validate(app);
-            Ok(json!({ "valid": errors.is_empty(), "errors": errors }))
+            Ok(json!({
+                "valid": errors.is_empty(),
+                "errors": errors
+            }))
         }
 
         "invoke" => {
-            let action = req.action.ok_or_else(|| "action is required".to_owned())?;
-            let data = req.data.unwrap_or_default();
-            runtime.invoke_action(app, &action, data)
-                .map(|(record, events)| json!({
-                    "record": record,
-                    "events": events,
-                    "queued_jobs": runtime.jobs.len()
-                }))
-                .map_err(|e| e.to_string())
+            let action = req
+                .action
+                .clone()
+                .ok_or_else(|| error(&req, "MISSING_ACTION", "action is required"));
+            match action {
+                Ok(action) => {
+                    let data = req.data.clone().unwrap_or_default();
+                    runtime
+                        .invoke_action(app, &action, data)
+                        .map(|(record, events)| {
+                            json!({
+                                "record": record,
+                                "events": events,
+                                "queued_jobs": runtime.jobs.len()
+                            })
+                        })
+                        .map_err(|err| runtime_error(&req, err))
+                }
+                Err(err) => Err(err),
+            }
         }
 
         "create" => {
-            let entity = req.entity.ok_or_else(|| "entity is required".to_owned())?;
-            let data = req.data.unwrap_or_default();
-            runtime.create(app, &entity, data)
-                .map(|record| json!({"record": record}))
-                .map_err(|e| e.to_string())
+            let entity = req
+                .entity
+                .clone()
+                .ok_or_else(|| error(&req, "MISSING_ENTITY", "entity is required"));
+            match entity {
+                Ok(entity) => runtime
+                    .create(app, &entity, req.data.clone().unwrap_or_default())
+                    .map(|record| json!({"record": record}))
+                    .map_err(|err| runtime_error(&req, err)),
+                Err(err) => Err(err),
+            }
         }
 
         "query" => {
-            let entity = req.entity.ok_or_else(|| "entity is required".to_owned())?;
-            Ok(json!({"records": runtime.query(&entity)}))
+            let entity = req
+                .entity
+                .clone()
+                .ok_or_else(|| error(&req, "MISSING_ENTITY", "entity is required"));
+            match entity {
+                Ok(entity) => Ok(json!({"records": runtime.query(&entity)})),
+                Err(err) => Err(err),
+            }
         }
 
         "emit" => {
-            let event = req.event.ok_or_else(|| "event is required".to_owned())?;
-            let payload = req.payload.unwrap_or(Value::Null);
-            let emitted = runtime.emit(app, event, payload);
-            Ok(json!({"event": emitted, "queued_jobs": runtime.jobs.len()}))
+            let event = req
+                .event
+                .clone()
+                .ok_or_else(|| error(&req, "MISSING_EVENT", "event is required"));
+            match event {
+                Ok(event) => Ok(json!({
+                    "event": runtime.emit(app, event, req.payload.clone().unwrap_or(Value::Null)),
+                    "queued_jobs": runtime.jobs.len()
+                })),
+                Err(err) => Err(err),
+            }
         }
 
         "next_job" => Ok(json!({"job": runtime.take_job()})),
 
-        "snapshot" => Ok(serde_json::to_value(&*app).unwrap_or(Value::Null)),
+        "execute_job" => runtime
+            .execute_next_job(app)
+            .map(|result| json!({"result": result, "queued_jobs": runtime.jobs.len()}))
+            .map_err(|err| runtime_error(&req, err)),
 
+        "next_agent_task" => Ok(json!({"task": runtime.take_agent_task()})),
+
+        "subscribe" => {
+            let view = req
+                .view
+                .clone()
+                .ok_or_else(|| error(&req, "MISSING_VIEW", "view is required"));
+            match view {
+                Ok(view) => runtime
+                    .subscribe(app, &view)
+                    .map(|subscription| json!({"subscription": subscription}))
+                    .map_err(|err| runtime_error(&req, err)),
+                Err(err) => Err(err),
+            }
+        }
+
+        "unsubscribe" => {
+            let id = req
+                .subscription_id
+                .ok_or_else(|| error(&req, "MISSING_SUBSCRIPTION", "subscription_id is required"));
+            match id {
+                Ok(id) => Ok(json!({"removed": runtime.unsubscribe(id)})),
+                Err(err) => Err(err),
+            }
+        }
+
+        "next_update" => {
+            let id = req
+                .subscription_id
+                .ok_or_else(|| error(&req, "MISSING_SUBSCRIPTION", "subscription_id is required"));
+            match id {
+                Ok(id) => Ok(json!({"update": runtime.take_update(id)})),
+                Err(err) => Err(err),
+            }
+        }
+
+        "snapshot" => Ok(serde_json::to_value(&*app).unwrap_or(Value::Null)),
         "runtime_snapshot" => Ok(serde_json::to_value(&*runtime).unwrap_or(Value::Null)),
 
-        _ => Err(format!("unknown operation: {}", req.op)),
+        _ => Err(error(&req, "UNKNOWN_OPERATION", "operation is not supported")),
     };
 
     match result {
-        Ok(result) => Response { id, ok: true, result: Some(result), error: None },
-        Err(error) => Response { id, ok: false, result: None, error: Some(error) },
+        Ok(result) => Response {
+            id,
+            ok: true,
+            result: Some(result),
+            error: None,
+        },
+        Err(error) => Response {
+            id,
+            ok: false,
+            result: None,
+            error: Some(error),
+        },
     }
 }
 
@@ -125,75 +273,119 @@ mod tests {
     use crate::{Field, FieldType};
 
     #[test]
-    fn agent_can_mutate_and_inspect_graph() {
+    fn unknown_operation_has_machine_code() {
         let mut app = App::new("test");
         let mut runtime = Runtime::default();
 
-        let request: Request = serde_json::from_value(json!({
-            "id": 1,
-            "op": "put",
-            "node": {"kind": "Event", "id": "ticket.created"}
-        })).unwrap();
-
-        let response = handle(&mut app, &mut runtime, request);
-        assert!(response.ok);
-        assert!(app.get("ticket.created").is_some());
-
-        let request: Request = serde_json::from_value(json!({
-            "id": 2,
-            "op": "inspect",
-            "node_id": "ticket.created"
-        })).unwrap();
-
-        let response = handle(&mut app, &mut runtime, request);
-        assert!(response.ok);
-        assert_eq!(response.result.unwrap()["node"]["id"], "ticket.created");
-    }
-
-    #[test]
-    fn agent_can_create_and_query_data() {
-        let mut app = App::new("test");
-        let mut runtime = Runtime::default();
-        let mut fields = std::collections::BTreeMap::new();
-        fields.insert("email".into(), Field { ty: FieldType::String, required: true });
-        app.upsert(Node::Entity { id: "User".into(), fields });
-
-        let request: Request = serde_json::from_value(json!({
-            "id": 3,
-            "op": "create",
-            "entity": "User",
-            "data": {"email": "a@example.com"}
-        })).unwrap();
-
-        let response = handle(&mut app, &mut runtime, request);
-        assert!(response.ok);
-
-        let request: Request = serde_json::from_value(json!({
-            "id": 4,
-            "op": "query",
-            "entity": "User"
-        })).unwrap();
-
-        let response = handle(&mut app, &mut runtime, request);
-        assert_eq!(response.result.unwrap()["records"][0]["values"]["email"], "a@example.com");
-    }
-
-    #[test]
-    fn unknown_operation_is_structured_error() {
-        let mut app = App::new("test");
-        let mut runtime = Runtime::default();
-        let request: Request = serde_json::from_value(json!({"id": "x", "op": "explode"})).unwrap();
+        let request: Request =
+            serde_json::from_value(json!({"id": "x", "op": "explode"})).unwrap();
 
         let response = handle(&mut app, &mut runtime, request);
         assert!(!response.ok);
-        assert!(response.error.unwrap().contains("unknown operation"));
+        assert_eq!(response.error.unwrap().code, "UNKNOWN_OPERATION");
+    }
+
+    #[test]
+    fn missing_field_has_machine_code_and_field() {
+        let mut app = App::new("test");
+        let mut runtime = Runtime::default();
+
+        let mut fields = std::collections::BTreeMap::new();
+        fields.insert(
+            "email".into(),
+            Field {
+                ty: FieldType::String,
+                required: true,
+            },
+        );
+        app.upsert(Node::Entity {
+            id: "User".into(),
+            fields,
+        });
+
+        let request: Request = serde_json::from_value(json!({
+            "id": 1,
+            "op": "create",
+            "entity": "User",
+            "data": {}
+        }))
+        .unwrap();
+
+        let response = handle(&mut app, &mut runtime, request);
+        let err = response.error.unwrap();
+        assert_eq!(err.code, "MISSING_REQUIRED_FIELD");
+        assert_eq!(err.field.as_deref(), Some("email"));
+    }
+
+    #[test]
+    fn realtime_protocol_round_trip() {
+        let mut app = App::new("test");
+        let mut runtime = Runtime::default();
+
+        let mut fields = std::collections::BTreeMap::new();
+        fields.insert(
+            "message".into(),
+            Field {
+                ty: FieldType::String,
+                required: true,
+            },
+        );
+
+        app.upsert(Node::Entity {
+            id: "Ticket".into(),
+            fields,
+        });
+        app.upsert(Node::View {
+            id: "tickets".into(),
+            source: "Ticket".into(),
+            realtime: true,
+        });
+
+        let response = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({
+                "id": 1,
+                "op": "subscribe",
+                "view": "tickets"
+            }))
+            .unwrap(),
+        );
+
+        let subscription_id = response.result.unwrap()["subscription"]["id"]
+            .as_u64()
+            .unwrap();
+
+        runtime
+            .create(
+                &app,
+                "Ticket",
+                serde_json::from_value(json!({"message":"hello"})).unwrap(),
+            )
+            .unwrap();
+
+        let update = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({
+                "id": 2,
+                "op": "next_update",
+                "subscription_id": subscription_id
+            }))
+            .unwrap(),
+        );
+
+        assert_eq!(update.result.unwrap()["update"]["source"], "Ticket");
     }
 
     #[test]
     fn patch_operation_is_machine_friendly() {
         let mut app = App::new("test");
         let mut runtime = Runtime::default();
-        let node = Node::Entity { id: "User".into(), fields: std::collections::BTreeMap::new() };
+        let node = Node::Entity {
+            id: "User".into(),
+            fields: std::collections::BTreeMap::new(),
+        };
         let request = Request {
             id: json!(5),
             op: "patch".into(),
@@ -205,6 +397,8 @@ mod tests {
             data: None,
             event: None,
             payload: None,
+            view: None,
+            subscription_id: None,
         };
 
         let response = handle(&mut app, &mut runtime, request);

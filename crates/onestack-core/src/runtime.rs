@@ -74,6 +74,45 @@ impl Runtime {
         self.records.get(entity).cloned().unwrap_or_default()
     }
 
+    pub fn invoke_action(
+        &mut self,
+        app: &App,
+        action: &str,
+        values: Map<String, Value>,
+    ) -> Result<(Option<Record>, Vec<EventEnvelope>), RuntimeError> {
+        let (input, creates, emits) = match app.get(action) {
+            Some(Node::Action { input, creates, emits, .. }) => (input.clone(), creates.clone(), emits.clone()),
+            Some(_) => return Err(RuntimeError::NotEntity(action.into())),
+            None => return Err(RuntimeError::MissingEntity(action.into())),
+        };
+
+        for (name, field) in &input {
+            if field.required && !values.contains_key(name) {
+                return Err(RuntimeError::MissingField(name.clone()));
+            }
+            if let Some(value) = values.get(name) {
+                if !matches_type(&field.ty, value) {
+                    return Err(RuntimeError::InvalidField(name.clone()));
+                }
+            }
+        }
+
+        let record = creates.first()
+            .map(|entity| self.create(app, entity, values.clone()))
+            .transpose()?;
+
+        let payload = record.as_ref()
+            .map(|r| serde_json::json!({"record_id": r.id, "values": r.values}))
+            .unwrap_or_else(|| serde_json::json!({"values": values}));
+
+        let mut emitted = Vec::new();
+        for event in emits {
+            emitted.push(self.emit(app, event, payload.clone()));
+        }
+
+        Ok((record, emitted))
+    }
+
     pub fn emit(&mut self, app: &App, name: impl Into<String>, payload: Value) -> EventEnvelope {
         self.next_event_id += 1;
         let event = EventEnvelope { id: self.next_event_id, name: name.into(), payload };

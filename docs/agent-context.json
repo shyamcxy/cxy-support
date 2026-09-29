@@ -11,6 +11,11 @@
       "context",
       "determinism",
       "safe_mutation"
+    ],
+    "stress_tests": [
+      "support SaaS",
+      "AI video generation product",
+      "transactional SaaS"
     ]
   },
   "control_plane": {
@@ -48,7 +53,9 @@
     "Event",
     "Workflow",
     "Agent",
-    "View"
+    "View",
+    "File",
+    "Job"
   ],
   "execution_plane": {
     "implemented": [
@@ -59,7 +66,9 @@
       "workflow_execution",
       "agent_task_queue",
       "realtime_subscriptions",
-      "project_task_queue"
+      "project_task_queue",
+      "long_running_jobs",
+      "file_metadata"
     ],
     "planned": [
       "durable_postgres",
@@ -76,7 +85,8 @@
     "current_storage": "local JSON state",
     "target_storage": "Postgres",
     "ui_target": "generated frontend",
-    "single_service_goal": true
+    "single_service_goal": true,
+    "file_model": "opaque file metadata + URI; object-storage backend is pluggable"
   },
   "agent_contract": {
     "inspect_before_mutate": true,

@@ -71,3 +71,16 @@ The exact wire schema is documented in [docs/agent-protocol.md](docs/agent-proto
 3. HTTP + WebSocket transport: expose the same runtime through one service.
 4. Worker execution: execute workflow steps and agent tasks.
 5. Generated UI: materialize Views into a frontend without exposing frontend framework details.
+
+## General-purpose stress test
+
+OneStack is deliberately not a support-app runtime. The examples/video-studio.oir example models an AI video product using the same primitives:
+
+- entities and relationships;
+- File resources;
+- long-running Jobs with progress, timeout and retries;
+- Events and Workflows;
+- Agent execution;
+- realtime Views.
+
+This is the test we use to catch domain-specific assumptions in the core model.

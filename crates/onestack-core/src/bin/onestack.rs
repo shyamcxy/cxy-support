@@ -1,4 +1,4 @@
-use onestack_core::{engine::{parse_oir, validate}, protocol::{handle, Request}, runtime::Runtime, App};
+use onestack_core::{engine::{parse_oir, validate}, http, protocol::{handle, Request}, runtime::Runtime, App};
 use std::{env, fs, io::{self, BufRead, Write}, path::PathBuf};
 
 fn main() {
@@ -6,9 +6,11 @@ fn main() {
     match args.get(1).map(String::as_str).unwrap_or("agent") {
         "import" => import_oir(args.get(2)),
         "agent" => run_agent(),
+        "http" => run_http(args.get(2).map(String::as_str).unwrap_or("127.0.0.1:8787")),
+        "bench" => {}
         other => {
             eprintln!("unknown command: {other}");
-            eprintln!("usage: onestack [agent|import <file.oir>]");
+            eprintln!("usage: onestack [agent|http [addr]|import <file.oir>]");
             std::process::exit(2);
         }
     }
@@ -25,6 +27,18 @@ fn import_oir(file: Option<&String>) {
     }
     save_app(&app);
     println!("{}", app.to_json().unwrap());
+}
+
+fn run_http(addr: &str) {
+    let mut app = load_app();
+    let mut runtime = load_runtime();
+
+    eprintln!("OneStack HTTP listening on {addr}");
+    http::serve(addr, &mut app, &mut runtime, |app, runtime| {
+        save_app(app);
+        save_runtime(runtime);
+    })
+    .expect("HTTP server failed");
 }
 
 fn run_agent() {

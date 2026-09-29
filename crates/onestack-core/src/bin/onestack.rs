@@ -1,4 +1,4 @@
-use onestack_core::{engine::{parse_oir, validate}, protocol::{handle, Request}, App};
+use onestack_core::{engine::{parse_oir, validate}, protocol::{handle, Request}, runtime::Runtime, App};
 use std::{env, fs, io::{self, BufRead, Write}, path::PathBuf};
 
 fn main() {
@@ -28,7 +28,8 @@ fn import_oir(file: Option<&String>) {
 }
 
 fn run_agent() {
-    let mut app = load();
+    let mut app = load_app();
+    let mut runtime = load_runtime();
     let stdin = io::stdin();
     let mut stdout = io::BufWriter::new(io::stdout().lock());
 
@@ -50,8 +51,8 @@ fn run_agent() {
             }
         };
 
-        let response = handle(&mut app, request);
-        if response.ok { save(&app); }
+        let response = handle(&mut app, &mut runtime, request);
+        if response.ok { save_app(&app); save_runtime(&runtime); }
         serde_json::to_writer(&mut stdout, &response).ok();
         writeln!(stdout).ok();
         stdout.flush().ok();

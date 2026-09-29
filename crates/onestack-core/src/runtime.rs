@@ -4,8 +4,7 @@ use serde_json::{Map, Value};
 use std::collections::{BTreeMap, VecDeque};
 use thiserror::Error;
 
-#[derive(Debug, Error, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "code", content = "details")]
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum RuntimeError {
     #[error("entity not found: {0}")]
     MissingEntity(String),
@@ -233,8 +232,10 @@ impl Runtime {
             Node::Action { .. } => {
                 let values = event
                     .payload
-                    .as_object()
+                    .get("values")
+                    .and_then(Value::as_object)
                     .cloned()
+                    .or_else(|| event.payload.as_object().cloned())
                     .unwrap_or_default();
                 let (record, events) = self.invoke_action(app, &job.step, values)?;
                 Ok(Some(JobResult::Action {

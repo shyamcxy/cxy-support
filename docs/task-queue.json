@@ -2,12 +2,59 @@
   "source_of_truth": "github_issues",
   "branch": "onestack/v0.1-agent-core",
   "tasks": [
-    {"issue":2,"state":"READY","title":"Durable Postgres execution backend","reason":"requires database integration and external verification"},
-    {"issue":3,"state":"IN_PROGRESS","title":"HTTP transport for the OneStack agent protocol","implementation":"http.rs + onestack CLI http mode"},
-    {"issue":4,"state":"IN_PROGRESS","title":"Structured machine-readable error model","implementation":"protocol ErrorPayload + RuntimeError codes"},
-    {"issue":5,"state":"IN_PROGRESS","title":"Execute workflow jobs and Agent steps","implementation":"Runtime::execute_next_job + AgentTask queue"},
-    {"issue":6,"state":"IN_PROGRESS","title":"Define realtime subscription semantics","implementation":"subscription/update runtime + protocol operations"},
-    {"issue":7,"state":"IN_PROGRESS","title":"Build OneStack agent benchmark harness","implementation":"onestack-bench binary"},
-    {"issue":8,"state":"READY","title":"Build an agent task picker and handoff endpoint","reason":"requires external GitHub issue integration"}
+    {
+      "issue": 2,
+      "state": "READY",
+      "title": "Durable Postgres execution backend",
+      "reason": "requires database integration and external verification"
+    },
+    {
+      "issue": 3,
+      "state": "IN_PROGRESS",
+      "title": "HTTP transport for the OneStack agent protocol",
+      "implementation": "http.rs + onestack CLI http mode"
+    },
+    {
+      "issue": 4,
+      "state": "IN_PROGRESS",
+      "title": "Structured machine-readable error model",
+      "implementation": "protocol ErrorPayload + RuntimeError codes"
+    },
+    {
+      "issue": 5,
+      "state": "IN_PROGRESS",
+      "title": "Execute workflow jobs and Agent steps",
+      "implementation": "Runtime::execute_next_job + AgentTask queue"
+    },
+    {
+      "issue": 6,
+      "state": "IN_PROGRESS",
+      "title": "Define realtime subscription semantics",
+      "implementation": "subscription/update runtime + protocol operations"
+    },
+    {
+      "issue": 7,
+      "state": "IN_PROGRESS",
+      "title": "Build OneStack agent benchmark harness",
+      "implementation": "onestack-bench binary"
+    },
+    {
+      "issue": 8,
+      "state": "READY",
+      "title": "Build an agent task picker and handoff endpoint",
+      "reason": "requires external GitHub issue integration"
+    },
+    {
+      "issue": 9,
+      "state": "READY",
+      "title": "Object storage backend for File resources",
+      "reason": "requires storage provider integration"
+    },
+    {
+      "issue": 10,
+      "state": "READY",
+      "title": "First-class authorization policies",
+      "reason": "next security primitive"
+    }
   ]
 }

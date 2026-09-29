@@ -33,7 +33,7 @@ pub fn parse_oir(source: &str) -> Result<App, EngineError> {
                         lines.next();
                         continue;
                     }
-                    if candidate.split_whitespace().next().map(|x| matches!(x, "ENTITY"|"ACTION"|"EVENT"|"AGENT"|"WORKFLOW"|"VIEW"|"FILE"|"JOB")).unwrap_or(false) { break; }
+                    if candidate.split_whitespace().next().map(|x| matches!(x, "ENTITY"|"ACTION"|"EVENT"|"AGENT"|"WORKFLOW"|"VIEW"|"FILE"|"JOB"|"POLICY")).unwrap_or(false) { break; }
                     let Some((name, rest)) = candidate.split_once(':') else { break; };
                     lines.next();
                     let mut p = rest.split_whitespace();
@@ -53,7 +53,7 @@ pub fn parse_oir(source: &str) -> Result<App, EngineError> {
                     let candidate = peek_raw.trim();
                     if candidate.is_empty() || candidate.starts_with('#') { lines.next(); continue; }
                     let key = candidate.split_whitespace().next().unwrap_or("");
-                    if matches!(key, "ENTITY"|"ACTION"|"EVENT"|"AGENT"|"WORKFLOW"|"VIEW"|"FILE"|"JOB") { break; }
+                    if matches!(key, "ENTITY"|"ACTION"|"EVENT"|"AGENT"|"WORKFLOW"|"VIEW"|"FILE"|"JOB"|"POLICY") { break; }
                     if let Some(rest) = candidate.strip_prefix("input ") {
                         lines.next();
                         let (name, ty) = rest.split_once(':').ok_or_else(|| EngineError::Parse { line: peek_idx + 1, message: "input needs name:type".into() })?;
@@ -148,6 +148,14 @@ pub fn validate(app: &App) -> Vec<String> {
         for dep in node.dependencies() {
             if !app.nodes.contains_key(&dep) {
                 errors.insert(format!("{} references missing node {}", node.id(), dep));
+            }
+        }
+        if let Node::Policy { action, resource, .. } = node {
+            if action != "*" && !app.nodes.contains_key(action) {
+                errors.insert(format!("policy {} references missing action {}", node.id(), action));
+            }
+            if resource != "*" && !app.nodes.contains_key(resource) {
+                errors.insert(format!("policy {} references missing resource {}", node.id(), resource));
             }
         }
         if let Node::Workflow { trigger, .. } = node {

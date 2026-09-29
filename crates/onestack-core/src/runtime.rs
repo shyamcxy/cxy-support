@@ -318,25 +318,26 @@ impl Runtime {
             return Err(RuntimeError::InvalidTaskState(format!("progress must be between 0 and 1, got {progress}")));
         }
 
-        let job = self
-            .execution_jobs
-            .get_mut(&id)
-            .ok_or(RuntimeError::MissingExecutionJob(id))?;
+        let job_snapshot = {
+            let job = self
+                .execution_jobs
+                .get_mut(&id)
+                .ok_or(RuntimeError::MissingExecutionJob(id))?;
 
-        job.state = state.clone();
-        job.progress = progress;
-        job.result = result.clone();
-        job.error = error.clone();
+            job.state = state.clone();
+            job.progress = progress;
+            job.result = result.clone();
+            job.error = error.clone();
+            job.clone()
+        };
 
-        if matches!(state, ExecutionState::Completed | ExecutionState::Failed | ExecutionState::Cancelled) {
-            if state == ExecutionState::Completed {
-                if let Some(payload) = result {
-                    self.emit_job_events(app, job, payload);
-                }
+        if state == ExecutionState::Completed {
+            if let Some(payload) = result {
+                self.emit_job_events(app, &job_snapshot, payload);
             }
         }
 
-        Ok(job.clone())
+        Ok(job_snapshot)
     }
 
     fn emit_job_events(&mut self, app: &App, job: &LongJob, payload: Value) {

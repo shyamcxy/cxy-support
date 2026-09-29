@@ -224,7 +224,7 @@ JOB generateVideo
 
         let app = parse_oir(source).expect("parse");
         assert_eq!(app.name, "support");
-        assert_eq!(app.nodes.len(), 9);
+        assert_eq!(app.nodes.len(), 10);
         assert!(validate(&app).is_empty());
         assert!(app.dependencies("Ticket").contains("User"));
         assert!(app.dependencies("onTicketCreated").contains("ticket.created"));
@@ -239,7 +239,7 @@ JOB generateVideo
             errors,
             vec![
                 "tickets references missing node Ticket".to_string(),
-                "view tickets source Ticket is not an Entity".to_string()
+                "view tickets source Ticket is not an Entity or Job".to_string()
             ]
         );
     }

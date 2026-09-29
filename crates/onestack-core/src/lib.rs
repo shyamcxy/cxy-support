@@ -51,13 +51,16 @@ pub enum Node {
     Workflow { id: String, trigger: String, steps: Vec<String> },
     Agent { id: String, reads: Vec<String>, writes: Vec<String> },
     View { id: String, source: String, realtime: bool },
+    File { id: String, content_type: String, public: bool },
+    Job { id: String, input: BTreeMap<String, Field>, creates: Vec<String>, emits: Vec<String>, progress: bool, timeout_ms: u64, retries: u32 },
 }
 
 impl Node {
     pub fn id(&self) -> &str {
         match self {
             Self::Entity { id, .. } | Self::Action { id, .. } | Self::Event { id }
-            | Self::Workflow { id, .. } | Self::Agent { id, .. } | Self::View { id, .. } => id,
+            | Self::Workflow { id, .. } | Self::Agent { id, .. } | Self::View { id, .. }
+            | Self::File { id, .. } | Self::Job { id, .. } => id,
         }
     }
 
@@ -87,6 +90,15 @@ impl Node {
                 out.extend(writes.iter().cloned());
             }
             Self::View { source, .. } => { out.insert(source.clone()); }
+            Self::File { .. } => {}
+            Self::Job { creates, emits, input, .. } => {
+                out.extend(creates.iter().cloned());
+                out.extend(emits.iter().cloned());
+                out.extend(input.values().filter_map(|f| match &f.ty {
+                    FieldType::Reference(target) => Some(target.clone()),
+                    _ => None,
+                }));
+            }
         }
         out
     }
@@ -139,5 +151,7 @@ mod tests {
 
         assert!(app.dependencies("createTicket").contains("Ticket"));
         assert!(app.dependents("ticket.created").contains("onTicketCreated"));
+        app.upsert(Node::Job { id: "generateVideo".into(), input: BTreeMap::new(), creates: vec!["Video".into()], emits: vec!["video.completed".into()], progress: true, timeout_ms: 600_000, retries: 2 });
+        assert!(app.dependencies("generateVideo").contains("Video"));
     }
 }

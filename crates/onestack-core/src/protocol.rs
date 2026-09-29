@@ -11,6 +11,8 @@ pub struct Request {
     #[serde(default)]
     pub node_id: Option<String>,
     #[serde(default)]
+    pub action: Option<String>,
+    #[serde(default)]
     pub patch: Option<Patch>,
     #[serde(default)]
     pub entity: Option<String>,
@@ -64,6 +66,18 @@ pub fn handle(app: &mut App, runtime: &mut Runtime, req: Request) -> Response {
         "validate" => {
             let errors = validate(app);
             Ok(json!({ "valid": errors.is_empty(), "errors": errors }))
+        }
+
+        "invoke" => {
+            let action = req.action.ok_or_else(|| "action is required".to_owned())?;
+            let data = req.data.unwrap_or_default();
+            runtime.invoke_action(app, &action, data)
+                .map(|(record, events)| json!({
+                    "record": record,
+                    "events": events,
+                    "queued_jobs": runtime.jobs.len()
+                }))
+                .map_err(|e| e.to_string())
         }
 
         "create" => {

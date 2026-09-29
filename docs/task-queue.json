@@ -46,15 +46,23 @@
     },
     {
       "issue": 9,
-      "state": "READY",
+      "state": "IN_PROGRESS",
       "title": "Object storage backend for File resources",
-      "reason": "requires storage provider integration"
+      "reason": "requires storage provider integration",
+      "implementation": "storage abstraction merged; production adapter moved to issue #12"
     },
     {
       "issue": 10,
-      "state": "READY",
+      "state": "DONE",
       "title": "First-class authorization policies",
-      "reason": "next security primitive"
+      "reason": "next security primitive",
+      "implementation": "Policy graph + runtime enforcement merged in PR #13"
+    },
+    {
+      "issue": 12,
+      "state": "READY",
+      "title": "Production S3-compatible object storage adapter",
+      "reason": "provider integration"
     }
   ]
 }

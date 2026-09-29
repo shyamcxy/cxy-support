@@ -150,3 +150,41 @@ printf '%s\n' '{"id":1,"op":"list"}' '{"id":2,"op":"validate"}' | cargo run -p o
 ```
 
 The application state is persisted to `.onestack/app.json`.
+
+### execute_job
+
+Executes one queued workflow job. Action steps run inside the semantic runtime. Agent steps become an AgentTask for an external AI executor.
+
+```json
+{"id":11,"op":"execute_job"}
+```
+
+### next_agent_task
+
+Returns the next queued AgentTask.
+
+```json
+{"id":12,"op":"next_agent_task"}
+```
+
+### subscribe / unsubscribe / next_update
+
+Manage realtime View subscriptions.
+
+```json
+{"id":13,"op":"subscribe","view":"tickets"}
+{"id":14,"op":"next_update","subscription_id":1}
+{"id":15,"op":"unsubscribe","subscription_id":1}
+```
+
+### HTTP transport
+
+The same protocol is exposed at:
+- `GET /health`
+- `POST /agent`
+
+Run locally with:
+
+```bash
+cargo run -p onestack-core --bin onestack -- http 127.0.0.1:8787
+```

@@ -17,6 +17,14 @@ pub struct Request {
     #[serde(default)]
     pub action: Option<String>,
     #[serde(default)]
+    pub job: Option<String>,
+    #[serde(default)]
+    pub job_id: Option<u64>,
+    #[serde(default)]
+    pub progress: Option<f32>,
+    #[serde(default)]
+    pub error_message: Option<String>,
+    #[serde(default)]
     pub patch: Option<Patch>,
     #[serde(default)]
     pub entity: Option<String>,
@@ -215,6 +223,109 @@ pub fn handle(app: &mut App, runtime: &mut Runtime, req: Request) -> Response {
         }
 
         "next_job" => Ok(json!({"job": runtime.take_job()})),
+
+        "start_job" => {
+            let job_kind = req
+                .job
+                .clone()
+                .ok_or_else(|| error(&req, "MISSING_JOB", "job is required"));
+            match job_kind {
+                Ok(job_kind) => runtime
+                    .start_job(app, &job_kind, req.data.clone().unwrap_or_default())
+                    .map(|job| json!({"job": job}))
+                    .map_err(|err| runtime_error(&req, err)),
+                Err(err) => Err(err),
+            }
+        }
+
+        "next_execution_job" => Ok(json!({"job": runtime.take_execution_job()})),
+
+        "get_job" => {
+            let id = req
+                .job_id
+                .ok_or_else(|| error(&req, "MISSING_JOB_ID", "job_id is required"));
+            match id {
+                Ok(id) => Ok(json!({"job": runtime.get_execution_job(id)})),
+                Err(err) => Err(err),
+            }
+        }
+
+        "list_jobs" => Ok(json!({"jobs": runtime.execution_jobs.values().collect::<Vec<_>>()})),
+
+        "update_job" => {
+            let id = req
+                .job_id
+                .ok_or_else(|| error(&req, "MISSING_JOB_ID", "job_id is required"));
+            let state = req
+                .task_state
+                .clone()
+                .ok_or_else(|| error(&req, "MISSING_JOB_STATE", "task_state is required"));
+            match (id, state) {
+                (Ok(id), Ok(state)) => {
+                    let state = match state.as_str() {
+                        "queued" => crate::runtime::ExecutionState::Queued,
+                        "running" => crate::runtime::ExecutionState::Running,
+                        "completed" => crate::runtime::ExecutionState::Completed,
+                        "failed" => crate::runtime::ExecutionState::Failed,
+                        "cancelled" => crate::runtime::ExecutionState::Cancelled,
+                        _ => return Response {
+                            id: req.id.clone(),
+                            ok: false,
+                            result: None,
+                            error: Some(error(&req, "INVALID_JOB_STATE", "task_state must be queued, running, completed, failed, or cancelled")),
+                        },
+                    };
+                    let progress = req.progress.unwrap_or_else(|| {
+                        if state == crate::runtime::ExecutionState::Completed { 1.0 } else { 0.0 }
+                    });
+                    runtime
+                        .update_execution_job(
+                            app,
+                            id,
+                            state,
+                            progress,
+                            req.payload.clone(),
+                            req.error_message.clone(),
+                        )
+                        .map(|job| json!({"job": job}))
+                        .map_err(|err| runtime_error(&req, err))
+                }
+                (Err(err), _) | (_, Err(err)) => Err(err),
+            }
+        }
+
+        "register_file" => {
+            let payload = req
+                .payload
+                .clone()
+                .and_then(|v| v.as_object().cloned())
+                .ok_or_else(|| error(&req, "MISSING_FILE_METADATA", "payload must contain file metadata"));
+            match payload {
+                Ok(payload) => {
+                    let name = payload.get("name").and_then(Value::as_str).unwrap_or("unnamed").to_owned();
+                    let content_type = payload.get("content_type").and_then(Value::as_str).unwrap_or("application/octet-stream").to_owned();
+                    let size = payload.get("size").and_then(Value::as_u64).unwrap_or(0);
+                    let uri = payload.get("uri").and_then(Value::as_str).unwrap_or("").to_owned();
+                    let kind = payload.get("kind").and_then(Value::as_str).map(ToOwned::to_owned);
+                    Ok(json!({"file": runtime.register_file(name, content_type, size, uri, kind)}))
+                }
+                Err(err) => Err(err),
+            }
+        }
+
+        "get_file" => {
+            let id = req
+                .job_id
+                .map(|x| x.to_string())
+                .or_else(|| req.node_id.clone())
+                .ok_or_else(|| error(&req, "MISSING_FILE_ID", "node_id must contain file id"));
+            match id {
+                Ok(id) => Ok(json!({"file": runtime.get_file(&id)})),
+                Err(err) => Err(err),
+            }
+        }
+
+        "list_files" => Ok(json!({"files": runtime.list_files()})),
 
         "execute_job" => runtime
             .execute_next_job(app)
@@ -461,6 +572,10 @@ mod tests {
             node: None,
             node_id: None,
             action: None,
+            job: None,
+            job_id: None,
+            progress: None,
+            error_message: None,
             patch: Some(patch_upsert(node)),
             entity: None,
             data: None,

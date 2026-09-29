@@ -42,3 +42,6 @@ VIEW projectGenerations
 VIEW generationJobs
   source generateVideo
   realtime true
+
+POLICY videoAgentAllow video-agent generateVideo generateVideo allow
+POLICY videoAgentDeny * generateVideo generateVideo deny

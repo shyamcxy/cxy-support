@@ -204,6 +204,54 @@ impl Runtime {
         self.records.get(entity).cloned().unwrap_or_default()
     }
 
+    pub fn authorize(
+        &self,
+        app: &App,
+        subject: &str,
+        action: &str,
+        resource: &str,
+        context: &Map<String, Value>,
+    ) -> bool {
+        let requires_auth = matches!(
+            app.get(action),
+            Some(Node::Action { requires_auth: true, .. })
+        );
+
+        let policies: Vec<&crate::Node> = app.nodes.values().filter(|node| {
+            let Node::Policy { subject: p_subject, action: p_action, resource: p_resource, .. } = node else {
+                return false;
+            };
+            (p_subject == "*" || p_subject == subject)
+                && (p_action == "*" || p_action == action)
+                && (p_resource == "*" || p_resource == resource)
+        }).collect();
+
+        let mut matched_allow = false;
+        for policy in policies {
+            if let Node::Policy { allow, condition, .. } = policy {
+                let condition_matches = match condition.as_deref() {
+                    None | Some("*") => true,
+                    Some(expr) => {
+                        let Some((field, expected)) = expr.split_once('=') else { false };
+                        context.get(field).map(|value| value.to_string().trim_matches('"') == expected).unwrap_or(false)
+                    }
+                };
+                if condition_matches {
+                    if !*allow {
+                        return false;
+                    }
+                    matched_allow = true;
+                }
+            }
+        }
+
+        if matched_allow {
+            true
+        } else {
+            !requires_auth
+        }
+    }
+
     pub fn invoke_action(
         &mut self,
         app: &App,

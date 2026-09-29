@@ -38,3 +38,7 @@ WORKFLOW onGenerationComplete
 VIEW projectGenerations
   source Generation
   realtime true
+
+VIEW generationJobs
+  source generateVideo
+  realtime true

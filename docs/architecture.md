@@ -85,3 +85,7 @@ The current semantic graph is intentionally broad enough to model both CRUD SaaS
 - Job — long-running execution with progress and terminal state.
 
 A Job may be backed by a GPU worker, external model API, container, or cloud queue. A File may be backed by S3-compatible storage, a CDN, local storage, or another provider. Those providers are not part of the agent's mental model.
+
+## Security and storage
+
+Policy is part of the semantic graph and is enforced by the runtime. Storage is accessed through a provider-neutral object interface. Cloud object-storage providers remain adapters, not agent-facing primitives.

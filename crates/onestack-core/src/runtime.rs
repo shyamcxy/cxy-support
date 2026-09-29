@@ -14,6 +14,36 @@ pub enum RuntimeError {
     MissingField(String),
     #[error("invalid field type: {0}")]
     InvalidField(String),
+
+
+    #[test]
+    fn action_creates_and_emits() {
+        let mut app = App::new("support");
+        let mut fields = BTreeMap::new();
+        fields.insert("message".into(), Field { ty: FieldType::String, required: true });
+        app.upsert(Node::Entity { id: "Ticket".into(), fields });
+        app.upsert(Node::Event { id: "ticket.created".into() });
+        app.upsert(Node::Action {
+            id: "createTicket".into(),
+            input: {
+                let mut m = BTreeMap::new();
+                m.insert("message".into(), Field { ty: FieldType::String, required: true });
+                m
+            },
+            creates: vec!["Ticket".into()],
+            emits: vec!["ticket.created".into()],
+            requires_auth: false,
+        });
+
+        let mut runtime = Runtime::default();
+        let mut values = Map::new();
+        values.insert("message".into(), Value::String("hello".into()));
+
+        let (record, events) = runtime.invoke_action(&app, "createTicket", values).unwrap();
+        assert_eq!(record.unwrap().id, "r1");
+        assert_eq!(events[0].name, "ticket.created");
+    }
+
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -107,3 +107,22 @@ Event emission creates workflow jobs. `execute_job` resolves the step:
 - Agent -> enqueue an AgentTask for an external AI executor.
 
 The runtime does not embed an LLM provider into the core execution loop.
+
+## Long-running Jobs
+
+A Job is a semantic execution primitive for work that may outlive a request.
+
+Required state model:
+- queued
+- running
+- completed
+- failed
+- cancelled
+
+The agent-facing contract includes starting a job, taking pending work, reading job status, updating progress, and completing/failing/cancelling a job.
+
+Providers such as GPU queues, Lambda, containers, or external model APIs are implementation details.
+
+## Files
+
+A File is a semantic resource type. The agent sees stable metadata and an opaque URI. The runtime may later back that URI with object storage, a CDN, local storage, or another provider without changing application semantics.

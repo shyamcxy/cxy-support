@@ -199,6 +199,7 @@ mod tests {
             op: "patch".into(),
             node: None,
             node_id: None,
+            action: None,
             patch: Some(patch_upsert(node)),
             entity: None,
             data: None,

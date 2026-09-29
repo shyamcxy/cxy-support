@@ -85,6 +85,38 @@ Checks graph references and primitive-specific constraints.
 {"id":6,"op":"validate"}
 ```
 
+### create
+
+Creates a record in an Entity using the runtime's validated data model.
+
+```json
+{"id":7,"op":"create","entity":"Ticket","data":{"message":"hello"}}
+```
+
+### query
+
+Reads records for an Entity.
+
+```json
+{"id":8,"op":"query","entity":"Ticket"}
+```
+
+### emit
+
+Emits an application event and schedules matching workflow steps.
+
+```json
+{"id":9,"op":"emit","event":"ticket.created","payload":{"ticket":"r1"}}
+```
+
+### next_job
+
+Takes the next workflow job from the execution queue.
+
+```json
+{"id":10,"op":"next_job"}
+```
+
 ### snapshot
 
 Returns the whole application graph.

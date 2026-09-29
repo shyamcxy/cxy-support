@@ -665,6 +665,56 @@ mod tests {
     }
 
     #[test]
+    fn policy_authorization_protocol_round_trip() {
+        let mut app = App::new("secure");
+        let mut runtime = Runtime::default();
+
+        app.upsert(Node::Action {
+            id: "refund".into(),
+            input: std::collections::BTreeMap::new(),
+            creates: vec![],
+            emits: vec![],
+            requires_auth: true,
+        });
+        app.upsert(Node::Policy {
+            id: "billing".into(),
+            subject: "billing-agent".into(),
+            action: "refund".into(),
+            resource: "refund".into(),
+            allow: true,
+            condition: None,
+        });
+
+        let allowed = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({
+                "id": 1,
+                "op": "authorize",
+                "subject": "billing-agent",
+                "action": "refund",
+                "resource": "refund"
+            })).unwrap(),
+        );
+        assert_eq!(allowed.result.unwrap()["allowed"], true);
+
+        let denied = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({
+                "id": 2,
+                "op": "invoke",
+                "subject": "other-agent",
+                "action": "refund",
+                "resource": "refund",
+                "data": {}
+            })).unwrap(),
+        );
+        assert!(!denied.ok);
+        assert_eq!(denied.error.unwrap().code, "POLICY_DENIED");
+    }
+
+    #[test]
     fn patch_operation_is_machine_friendly() {
         let mut app = App::new("test");
         let mut runtime = Runtime::default();

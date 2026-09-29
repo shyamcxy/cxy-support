@@ -72,3 +72,67 @@ pub fn handle(app: &mut App, req: Request) -> Response {
 pub fn patch_upsert(node: Node) -> Patch {
     Patch { op: PatchOp::Upsert(node) }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn agent_can_mutate_and_inspect_graph() {
+        let mut app = App::new("test");
+        let request: Request = serde_json::from_value(serde_json::json!({
+            "id": 1,
+            "op": "put",
+            "node": {
+                "kind": "Event",
+                "id": "ticket.created"
+            }
+        })).unwrap();
+
+        let response = handle(&mut app, request);
+        assert!(response.ok);
+        assert!(app.get("ticket.created").is_some());
+
+        let request: Request = serde_json::from_value(serde_json::json!({
+            "id": 2,
+            "op": "inspect",
+            "node_id": "ticket.created"
+        })).unwrap();
+
+        let response = handle(&mut app, request);
+        assert!(response.ok);
+        assert!(response.result.unwrap()["node"]["id"] == "ticket.created");
+    }
+
+    #[test]
+    fn unknown_operation_is_structured_error() {
+        let mut app = App::new("test");
+        let request: Request = serde_json::from_value(serde_json::json!({
+            "id": "x",
+            "op": "explode"
+        })).unwrap();
+
+        let response = handle(&mut app, request);
+        assert!(!response.ok);
+        assert!(response.error.unwrap().contains("unknown operation"));
+    }
+
+    #[test]
+    fn patch_operation_is_machine_friendly() {
+        let mut app = App::new("test");
+        let node = Node::Entity { id: "User".into(), fields: BTreeMap::new() };
+        let request = Request {
+            id: serde_json::json!(3),
+            op: "patch".into(),
+            node: None,
+            node_id: None,
+            patch: Some(patch_upsert(node)),
+        };
+
+        let response = handle(&mut app, request);
+        assert!(response.ok);
+        assert!(app.get("User").is_some());
+    }
+}

@@ -90,3 +90,9 @@ Track:
 - edits;
 - failures;
 - time to verified behavior.
+
+## Security and resource primitives
+
+The general-purpose runtime now treats **Policy**, **File**, and **Job** as first-class application concepts. This allows the same semantic model to cover transactional SaaS, AI products, and compute-heavy applications.
+
+Policy controls who may perform an Action on a Resource. File represents application-owned binary assets through metadata and opaque URIs. Job represents long-running work with progress and terminal state.

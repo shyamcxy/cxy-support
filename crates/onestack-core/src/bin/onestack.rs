@@ -23,7 +23,7 @@ fn import_oir(file: Option<&String>) {
         eprintln!("{}", serde_json::json!({"valid": false, "errors": errors}));
         std::process::exit(1);
     }
-    save(&app);
+    save_app(&app);
     println!("{}", app.to_json().unwrap());
 }
 
@@ -59,17 +59,33 @@ fn run_agent() {
     }
 }
 
-fn state_path() -> PathBuf { PathBuf::from(".onestack/app.json") }
+fn app_path() -> PathBuf { PathBuf::from(".onestack/app.json") }
+fn runtime_path() -> PathBuf { PathBuf::from(".onestack/runtime.json") }
 
-fn load() -> App {
-    match fs::read_to_string(state_path()) {
+fn load_app() -> App {
+    match fs::read_to_string(app_path()) {
         Ok(text) => serde_json::from_str(&text).expect("invalid .onestack/app.json"),
         Err(_) => App::new("agent-app"),
     }
 }
 
-fn save(app: &App) {
-    let path = state_path();
-    if let Some(parent) = path.parent() { fs::create_dir_all(parent).expect("cannot create .onestack"); }
-    fs::write(path, app.to_json().expect("cannot serialize app")).expect("cannot save app");
+fn load_runtime() -> Runtime {
+    match fs::read_to_string(runtime_path()) {
+        Ok(text) => serde_json::from_str(&text).expect("invalid .onestack/runtime.json"),
+        Err(_) => Runtime::default(),
+    }
+}
+
+fn ensure_state_dir() {
+    fs::create_dir_all(".onestack").expect("cannot create .onestack");
+}
+
+fn save_app(app: &App) {
+    ensure_state_dir();
+    fs::write(app_path(), app.to_json().expect("cannot serialize app")).expect("cannot save app");
+}
+
+fn save_runtime(runtime: &Runtime) {
+    ensure_state_dir();
+    fs::write(runtime_path(), serde_json::to_string_pretty(runtime).expect("cannot serialize runtime")).expect("cannot save runtime");
 }

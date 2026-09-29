@@ -53,6 +53,7 @@ pub enum Node {
     View { id: String, source: String, realtime: bool },
     File { id: String, content_type: String, public: bool },
     Job { id: String, input: BTreeMap<String, Field>, creates: Vec<String>, emits: Vec<String>, progress: bool, timeout_ms: u64, retries: u32 },
+    Policy { id: String, subject: String, action: String, resource: String, allow: bool, condition: Option<String> },
 }
 
 impl Node {
@@ -60,7 +61,7 @@ impl Node {
         match self {
             Self::Entity { id, .. } | Self::Action { id, .. } | Self::Event { id }
             | Self::Workflow { id, .. } | Self::Agent { id, .. } | Self::View { id, .. }
-            | Self::File { id, .. } | Self::Job { id, .. } => id,
+            | Self::File { id, .. } | Self::Job { id, .. } | Self::Policy { id, .. } => id,
         }
     }
 
@@ -98,6 +99,10 @@ impl Node {
                     FieldType::Reference(target) => Some(target.clone()),
                     _ => None,
                 }));
+            }
+            Self::Policy { action, resource, .. } => {
+                if action != "*" { out.insert(action.clone()); }
+                if resource != "*" { out.insert(resource.clone()); }
             }
         }
         out

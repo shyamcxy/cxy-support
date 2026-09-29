@@ -126,3 +126,22 @@ Providers such as GPU queues, Lambda, containers, or external model APIs are imp
 ## Files
 
 A File is a semantic resource type. The agent sees stable metadata and an opaque URI. The runtime may later back that URI with object storage, a CDN, local storage, or another provider without changing application semantics.
+## Authorization Policies
+
+Policies are first-class graph nodes with:
+- subject;
+- action;
+- resource;
+- allow/deny effect;
+- optional simple condition.
+
+Policy evaluation is deterministic:
+- matching deny wins;
+- otherwise matching allow permits;
+- otherwise an action requiring auth is denied.
+
+The agent can inspect policies and call `authorize`; Action invocation applies the same policy engine.
+
+## Object storage boundary
+
+File bytes are managed through a provider-neutral `ObjectStorage` interface. The current branch includes a local adapter for tests/dev. Production S3-compatible storage remains an external integration task.

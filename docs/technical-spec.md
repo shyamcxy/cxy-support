@@ -88,3 +88,22 @@ The primary optimization target is agent interaction cost.
 A protocol operation should return only the information needed for the next reasoning step.
 
 Full application snapshots are an explicit escape hatch, not the normal workflow.
+
+## Realtime semantic contract
+
+A realtime View subscribes to its source Entity. Runtime updates are semantic records/events, not transport-specific WebSocket frames.
+
+Operations:
+- subscribe(view)
+- unsubscribe(subscription_id)
+- next_update(subscription_id)
+
+The WebSocket transport must later consume this same contract.
+
+## Workflow execution contract
+
+Event emission creates workflow jobs. `execute_job` resolves the step:
+- Action -> invoke semantic Action and return its record/events.
+- Agent -> enqueue an AgentTask for an external AI executor.
+
+The runtime does not embed an LLM provider into the core execution loop.

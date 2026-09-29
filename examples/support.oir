@@ -1,0 +1,30 @@
+APP support
+
+ENTITY User
+  email:String required
+  name:String required
+
+ENTITY Ticket
+  user:Reference(User) required
+  message:String required
+  status:String required
+
+ACTION createTicket
+  input message:String
+  creates Ticket
+  emits ticket.created
+  requires_auth true
+
+EVENT ticket.created
+
+AGENT supportAgent
+  reads Ticket
+  writes Ticket
+
+WORKFLOW onTicketCreated
+  trigger ticket.created
+  steps supportAgent
+
+VIEW tickets
+  source Ticket
+  realtime true

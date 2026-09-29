@@ -161,8 +161,8 @@ pub fn validate(app: &App) -> Vec<String> {
             }
         }
         if let Node::View { source, .. } = node {
-            if !matches!(app.get(source), Some(Node::Entity { .. })) {
-                errors.insert(format!("view {} source {} is not an Entity", node.id(), source));
+            if !matches!(app.get(source), Some(Node::Entity { .. }) | Some(Node::Job { .. })) {
+                errors.insert(format!("view {} source {} is not an Entity or Job", node.id(), source));
             }
         }
     }

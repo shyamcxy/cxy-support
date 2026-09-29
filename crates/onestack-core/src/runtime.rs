@@ -26,7 +26,10 @@ pub enum RuntimeError {
     TaskNotReady(u64),
     #[error("invalid task state: {0}")]
     InvalidTaskState(String),
+    #[error("execution job not found: {0}")]
     MissingExecutionJob(u64),
+    #[error("policy denied for {action} on {resource}")]
+    PolicyDenied { action: String, resource: String },
 }
 
 impl RuntimeError {
@@ -43,6 +46,7 @@ impl RuntimeError {
             Self::TaskNotReady(_) => "TASK_NOT_READY",
             Self::InvalidTaskState(_) => "INVALID_TASK_STATE",
             Self::MissingExecutionJob(_) => "EXECUTION_JOB_NOT_FOUND",
+            Self::PolicyDenied { .. } => "POLICY_DENIED",
         }
     }
 }
@@ -200,12 +204,78 @@ impl Runtime {
         self.records.get(entity).cloned().unwrap_or_default()
     }
 
+    pub fn authorize(
+        &self,
+        app: &App,
+        subject: &str,
+        action: &str,
+        resource: &str,
+        context: &Map<String, Value>,
+    ) -> bool {
+        let requires_auth = matches!(
+            app.get(action),
+            Some(Node::Action { requires_auth: true, .. })
+        );
+
+        let policies: Vec<&crate::Node> = app.nodes.values().filter(|node| {
+            let Node::Policy { subject: p_subject, action: p_action, resource: p_resource, .. } = node else {
+                return false;
+            };
+            (p_subject == "*" || p_subject == subject)
+                && (p_action == "*" || p_action == action)
+                && (p_resource == "*" || p_resource == resource)
+        }).collect();
+
+        let mut matched_allow = false;
+        for policy in policies {
+            if let Node::Policy { allow, condition, .. } = policy {
+                let condition_matches = match condition.as_deref() {
+                    None | Some("*") => true,
+                    Some(expr) => {
+                        let Some((field, expected)) = expr.split_once('=') else { false };
+                        context.get(field).map(|value| value.to_string().trim_matches('"') == expected).unwrap_or(false)
+                    }
+                };
+                if condition_matches {
+                    if !*allow {
+                        return false;
+                    }
+                    matched_allow = true;
+                }
+            }
+        }
+
+        if matched_allow {
+            true
+        } else {
+            !requires_auth
+        }
+    }
+
     pub fn invoke_action(
         &mut self,
         app: &App,
         action: &str,
         values: Map<String, Value>,
     ) -> Result<(Option<Record>, Vec<EventEnvelope>), RuntimeError> {
+        self.invoke_action_as(app, "*", action, action, values)
+    }
+
+    pub fn invoke_action_as(
+        &mut self,
+        app: &App,
+        subject: &str,
+        action: &str,
+        resource: &str,
+        values: Map<String, Value>,
+    ) -> Result<(Option<Record>, Vec<EventEnvelope>), RuntimeError> {
+        if !self.authorize(app, subject, action, resource, &values) {
+            return Err(RuntimeError::PolicyDenied {
+                action: action.into(),
+                resource: resource.into(),
+            });
+        }
+
         let (input, creates, emits) = match app.get(action) {
             Some(Node::Action {
                 input,
@@ -667,6 +737,39 @@ mod tests {
         });
 
         app
+    }
+
+    #[test]
+    fn policy_allows_and_denies_actions() {
+        let mut app = App::new("secure");
+        app.upsert(Node::Action {
+            id: "refund".into(),
+            input: BTreeMap::new(),
+            creates: vec![],
+            emits: vec![],
+            requires_auth: true,
+        });
+        app.upsert(Node::Policy {
+            id: "allowBilling".into(),
+            subject: "billing-agent".into(),
+            action: "refund".into(),
+            resource: "refund".into(),
+            allow: true,
+            condition: None,
+        });
+        app.upsert(Node::Policy {
+            id: "denyEverythingElse".into(),
+            subject: "*".into(),
+            action: "refund".into(),
+            resource: "refund".into(),
+            allow: false,
+            condition: None,
+        });
+
+        let runtime = Runtime::default();
+        let ctx = Map::new();
+        assert!(runtime.authorize(&app, "billing-agent", "refund", "refund", &ctx));
+        assert!(!runtime.authorize(&app, "other-agent", "refund", "refund", &ctx));
     }
 
     #[test]

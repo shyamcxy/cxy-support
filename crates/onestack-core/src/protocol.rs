@@ -17,6 +17,10 @@ pub struct Request {
     #[serde(default)]
     pub action: Option<String>,
     #[serde(default)]
+    pub subject: Option<String>,
+    #[serde(default)]
+    pub resource: Option<String>,
+    #[serde(default)]
     pub job: Option<String>,
     #[serde(default)]
     pub job_id: Option<u64>,
@@ -162,6 +166,33 @@ pub fn handle(app: &mut App, runtime: &mut Runtime, req: Request) -> Response {
             }))
         }
 
+        "authorize" => {
+            let subject = req
+                .subject
+                .clone()
+                .ok_or_else(|| error(&req, "MISSING_SUBJECT", "subject is required"));
+            let action = req
+                .action
+                .clone()
+                .ok_or_else(|| error(&req, "MISSING_ACTION", "action is required"));
+            let resource = req
+                .resource
+                .clone()
+                .ok_or_else(|| error(&req, "MISSING_RESOURCE", "resource is required"));
+            match (subject, action, resource) {
+                (Ok(subject), Ok(action), Ok(resource)) => Ok(json!({
+                    "allowed": runtime.authorize(
+                        app,
+                        &subject,
+                        &action,
+                        &resource,
+                        &req.data.clone().unwrap_or_default()
+                    )
+                })),
+                (Err(err), _, _) | (_, Err(err), _) | (_, _, Err(err)) => Err(err),
+            }
+        }
+
         "invoke" => {
             let action = req
                 .action
@@ -170,8 +201,10 @@ pub fn handle(app: &mut App, runtime: &mut Runtime, req: Request) -> Response {
             match action {
                 Ok(action) => {
                     let data = req.data.clone().unwrap_or_default();
+                    let subject = req.subject.as_deref().unwrap_or("*");
+                    let resource = req.resource.as_deref().unwrap_or(&action);
                     runtime
-                        .invoke_action(app, &action, data)
+                        .invoke_action_as(app, subject, &action, resource, data)
                         .map(|(record, events)| {
                             json!({
                                 "record": record,
@@ -632,6 +665,56 @@ mod tests {
     }
 
     #[test]
+    fn policy_authorization_protocol_round_trip() {
+        let mut app = App::new("secure");
+        let mut runtime = Runtime::default();
+
+        app.upsert(Node::Action {
+            id: "refund".into(),
+            input: std::collections::BTreeMap::new(),
+            creates: vec![],
+            emits: vec![],
+            requires_auth: true,
+        });
+        app.upsert(Node::Policy {
+            id: "billing".into(),
+            subject: "billing-agent".into(),
+            action: "refund".into(),
+            resource: "refund".into(),
+            allow: true,
+            condition: None,
+        });
+
+        let allowed = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({
+                "id": 1,
+                "op": "authorize",
+                "subject": "billing-agent",
+                "action": "refund",
+                "resource": "refund"
+            })).unwrap(),
+        );
+        assert_eq!(allowed.result.unwrap()["allowed"], true);
+
+        let denied = handle(
+            &mut app,
+            &mut runtime,
+            serde_json::from_value(json!({
+                "id": 2,
+                "op": "invoke",
+                "subject": "other-agent",
+                "action": "refund",
+                "resource": "refund",
+                "data": {}
+            })).unwrap(),
+        );
+        assert!(!denied.ok);
+        assert_eq!(denied.error.unwrap().code, "POLICY_DENIED");
+    }
+
+    #[test]
     fn patch_operation_is_machine_friendly() {
         let mut app = App::new("test");
         let mut runtime = Runtime::default();
@@ -645,6 +728,8 @@ mod tests {
             node: None,
             node_id: None,
             action: None,
+            subject: None,
+            resource: None,
             job: None,
             job_id: None,
             file_id: None,
